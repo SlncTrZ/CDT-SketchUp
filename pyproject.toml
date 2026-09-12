@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cdt-sketchup"
+version = "0.1.0"
+description = "Generic CAD execution engine for SketchUp over MCP"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "mcp>=2.2,<3",
+  "uvicorn>=0.35,<1",
+]
+
+[project.scripts]
+cdt-sketchup = "cdt_sketchup.server:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

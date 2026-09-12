@@ -1,0 +1,38 @@
+# Secrets / environment
+.env
+.env.*
+*.secret
+*.pem
+*.key
+
+# Python / build
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Ruby/dev
+.bundle/
+vendor/bundle/
+*.gem
+coverage/
+
+# SketchUp artifacts
+*.skp
+*.skb
+*.rbz
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs/temp
+*.log
+tmp/
+
+# Internal development control
+_private/
