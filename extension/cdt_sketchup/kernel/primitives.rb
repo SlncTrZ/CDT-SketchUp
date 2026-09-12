@@ -9,6 +9,31 @@ module CDTSketchUp
       JSON.parse(JSON.generate(value))
     end
 
+    def canonical_contained_path(root, candidate, error_kind, allow_missing: false)
+      expanded_root = File.expand_path(root)
+      FileUtils.mkdir_p(expanded_root)
+      canonical_root = File.realpath(expanded_root)
+      expanded_candidate = File.expand_path(candidate)
+
+      canonical_candidate = if File.exist?(expanded_candidate) || File.symlink?(expanded_candidate)
+                              File.realpath(expanded_candidate)
+                            elsif allow_missing
+                              parent = File.realpath(File.dirname(expanded_candidate))
+                              File.join(parent, File.basename(expanded_candidate))
+                            else
+                              raise BridgeError.new(error_kind, "Path target does not exist")
+                            end
+
+      root_key = File::ALT_SEPARATOR == "\\" ? canonical_root.downcase : canonical_root
+      candidate_key = File::ALT_SEPARATOR == "\\" ? canonical_candidate.downcase : canonical_candidate
+      unless candidate_key == root_key || candidate_key.start_with?(root_key + File::SEPARATOR)
+        raise BridgeError.new(error_kind, "Path escapes the allowed root")
+      end
+      canonical_candidate
+    rescue Errno::ENOENT, Errno::EACCES, SystemCallError
+      raise BridgeError.new(error_kind, "Path could not be resolved safely")
+    end
+
     def query_pid_pair(params, keys)
       unless params.is_a?(Hash)
         raise BridgeError.new("invalid_argument", "query params must be an object")

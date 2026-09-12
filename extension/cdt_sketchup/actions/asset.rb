@@ -63,9 +63,7 @@ module CDTSketchUp
       end
       root = File.expand_path(asset_registry_root)
       resolved = File.expand_path(File.join(root, file_name.strip))
-      unless resolved == root || resolved.start_with?(root + File::SEPARATOR)
-        raise BridgeError.new("asset_path_escape", "Asset file escapes the registry root")
-      end
+      resolved = canonical_contained_path(root, resolved, "asset_path_escape")
       manifest, = asset_registry_manifest
       bound = manifest[asset_key] || manifest[asset_key.to_s]
       unless bound.is_a?(Hash) && bound["file"].to_s == file_name.strip
@@ -230,9 +228,7 @@ module CDTSketchUp
       end
       root = File.expand_path(asset_registry_root)
       resolved = File.expand_path(File.join(root, file_name.strip))
-      unless resolved == root || resolved.start_with?(root + File::SEPARATOR)
-        raise BridgeError.new("texture_path_escape", "Texture file escapes the registry root")
-      end
+      resolved = canonical_contained_path(root, resolved, "texture_path_escape")
       manifest, = texture_registry_manifest
       bound = manifest[texture_key] || manifest[texture_key.to_s]
       unless bound.is_a?(Hash) && bound["file"].to_s == file_name.strip

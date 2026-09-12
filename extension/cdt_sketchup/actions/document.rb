@@ -15,7 +15,7 @@ module CDTSketchUp
       File.join(base, MODEL_FILES_ROOTNAME)
     end
 
-    def resolve_model_file(file_name, allowed_extensions)
+    def resolve_model_file(file_name, allowed_extensions, allow_missing: false)
       unless file_name.is_a?(String) && !file_name.strip.empty?
         raise BridgeError.new("invalid_argument", "file must be a non-empty file name")
       end
@@ -30,10 +30,7 @@ module CDTSketchUp
       root = File.expand_path(model_files_root)
       FileUtils.mkdir_p(root)
       resolved = File.expand_path(File.join(root, cleaned))
-      unless resolved == root || resolved.start_with?(root + File::SEPARATOR)
-        raise BridgeError.new("model_path_escape", "Model file escapes the models root")
-      end
-      resolved
+      canonical_contained_path(root, resolved, "model_path_escape", allow_missing: allow_missing)
     end
 
     def model_file_state(action, file_name, extra = {})
@@ -119,7 +116,7 @@ module CDTSketchUp
           "model_save_as params contain unsupported keys: #{unknown_keys.sort.join(', ')}"
         )
       end
-      resolved = resolve_model_file(params["file"], %w[skp])
+      resolved = resolve_model_file(params["file"], %w[skp], allow_missing: true)
       overwrite = params["overwrite"]
       overwrite = false if overwrite.nil?
       unless overwrite == true || overwrite == false
@@ -165,6 +162,12 @@ module CDTSketchUp
       unless File.file?(resolved)
         raise BridgeError.new("model_not_found", "Model file was not found")
       end
+      unless model.respond_to?(:modified?)
+        raise BridgeError.new("model_open_failed", "SketchUp cannot verify whether the active model is saved")
+      end
+      if model.modified?
+        raise BridgeError.new("unsaved_model_changes", "Active model has unsaved changes; save before model_open")
+      end
       if params.key?("if_model_guid") && !params["if_model_guid"].nil?
         unless params["if_model_guid"].to_s == model.guid.to_s
           raise BridgeError.new("context_mismatch", "Active model changed since the receipt")
@@ -174,10 +177,10 @@ module CDTSketchUp
         Sketchup.open_file(resolved)
       rescue StandardError => error
         log("model open failed: #{error.class}: #{error.message}")
-        raise BridgeError.new("model_save_failed", "SketchUp did not open the model")
+        raise BridgeError.new("model_open_failed", "SketchUp did not open the model")
       end
       unless opened
-        raise BridgeError.new("model_save_failed", "SketchUp did not open the model")
+        raise BridgeError.new("model_open_failed", "SketchUp did not open the model")
       end
       fresh = require_model
       state = model_file_state(
@@ -208,7 +211,7 @@ module CDTSketchUp
       unless MODEL_EXPORT_FORMATS.include?(format)
         raise BridgeError.new("model_export_failed", "Export format is not supported")
       end
-      resolved = resolve_model_file(params["file"], [format])
+      resolved = resolve_model_file(params["file"], [format], allow_missing: true)
       unless File.basename(resolved).downcase.end_with?(".#{format}")
         raise BridgeError.new("model_export_failed", "Export file must match the format")
       end

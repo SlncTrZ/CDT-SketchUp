@@ -42,6 +42,26 @@ class ExtensionSafetyTests(unittest.TestCase):
         self.assertIn("commit_operation", source)
         self.assertIn("abort_operation", source)
 
+    def test_public_errors_do_not_expose_temporary_native_debug_details(self) -> None:
+        source = read_extension_sources()
+        self.assertNotIn("DEBUG-TEMP", source)
+
+    def test_rooted_file_access_uses_canonical_containment(self) -> None:
+        source = read_extension_sources()
+        self.assertIn("def canonical_contained_path", source)
+        self.assertIn("File.realpath", source)
+        self.assertIn("File.symlink?", source)
+        self.assertIn('canonical_contained_path(root, resolved, "asset_path_escape")', source)
+        self.assertIn('canonical_contained_path(root, resolved, "texture_path_escape")', source)
+        self.assertIn('canonical_contained_path(root, resolved, "model_path_escape"', source)
+
+    def test_document_side_effect_receipts_do_not_claim_transactions(self) -> None:
+        source = read_extension_sources()
+        self.assertIn('"receipt_kind" => "external_side_effect"', source)
+        self.assertIn('"transactional" => false', source)
+        self.assertIn('"rollback_supported" => false', source)
+        self.assertIn('"unsaved_model_changes"', source)
+
 
 if __name__ == "__main__":
     unittest.main()

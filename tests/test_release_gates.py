@@ -70,13 +70,17 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(help_payload["provider_version"], PROVIDER_VERSION)
         self.assertEqual(help_payload["contract_version"], CONTRACT_VERSION)
 
-    def test_every_strict_tool_declares_rollback_and_receipt(self) -> None:
+    def test_capability_safety_class_matches_rollback_model(self) -> None:
         payload = build_capabilities(bridge_connected=True, live_model=True)
         for row in payload["capabilities"]:
             if row["safety_class"] == "strict_mutation":
                 self.assertTrue(row["rollback_verified"], row["tool"])
                 self.assertTrue(row["transactional"], row["tool"])
                 self.assertEqual(row["receipt_kind"], "operation", row["tool"])
+            elif row["safety_class"] == "external_side_effect":
+                self.assertFalse(row["rollback_verified"], row["tool"])
+                self.assertFalse(row["transactional"], row["tool"])
+                self.assertEqual(row["receipt_kind"], "external_side_effect", row["tool"])
 
     def test_preferred_and_compatibility_surfaces_are_disjoint(self) -> None:
         payload = build_capabilities(bridge_connected=True, live_model=True)

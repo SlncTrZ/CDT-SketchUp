@@ -2,7 +2,7 @@
 
 SketchUp-native MCP provider implementing a **Generic CAD Primitive / Execution Engine** with bounded native execution, semantic state and verified transactional mutation paths.
 
-> Current provider version: `0.1.0` · Contract: `0.21`
+> Current provider version: `0.1.0` · Contract: `0.22`
 > Measured native runtime: SketchUp 2024 `24.0.594` / Ruby `3.2.2`
 
 ## What it is
@@ -107,19 +107,20 @@ Compatibility modeling tools currently also include edge/face/group creation, se
 
 `system_capabilities` now returns **capability metadata schema v2** for every public MCP tool. Clients can select safe paths from JSON instead of inferring from prose. Each descriptor reports the tool/capability key, live support state, `safety_class`, read-only/destructive status, transaction and verified-rollback guarantees, identity semantics, unit/coordinate semantics, idempotence, limits, measured runtime versions, deprecation/replacement state, and whether the tool is preferred.
 
-The three safety classes are:
+The four safety classes are:
 
 - `read_only` — no model mutation;
-- `strict_mutation` — Semantic State Loop mutation with transaction + pre-commit validation + verified rollback;
+- `strict_mutation` — Semantic State Loop mutation with transaction/compensation + pre-commit validation + verified rollback;
+- `external_side_effect` — bounded preferred file/application action with verified completion but no claimed SketchUp transaction or rollback;
 - `deprecated_legacy` — compatibility mutation path retained temporarily but excluded from `preferred_tools`.
 
 A deterministic `capability_fingerprint` hashes only static descriptor semantics, so runtime availability changes do not masquerade as contract changes. `observed_runtime` is reported separately from the measured `runtime_versions` evidence list.
 
 ## Unified semantic receipts
 
-Strict mutations and `get_entity_state` now expose **receipt schema v1** while retaining contract-`0.9` compatibility aliases. Agents can consume one stable envelope instead of action-specific result shapes.
+Strict mutations, semantic queries, and document side effects expose discoverable **receipt schema v1**. Strict geometry returns `operation` receipts, semantic reads return `query` receipts, and document save/open/export returns `external_side_effect` receipts.
 
-Strict operation receipts include `receipt_id`, command/action, commit truth, context, exact affected PID sets, entity states, before/after model fingerprints, validation, rollback detail, duration and non-secret limits. `get_entity_state` returns the corresponding `query` receipt with canonical state under `result` / `entity_states`.
+Strict operation receipts include `receipt_id`, command/action, commit truth, context, exact affected PID sets, entity states, before/after model fingerprints, validation, rollback detail, duration and non-secret limits. External-side-effect receipts explicitly report `transactional=false`, `rollback_supported=false`, and verified completion rather than pretending a SketchUp transaction was committed.
 
 Affected PID accounting is derived from bounded semantic snapshots of the active edit context: created entities are new PIDs, changed/reparented surviving PIDs are `modified`, and only PIDs that no longer resolve are `deleted`. This avoids falsely describing extrusion source topology as deleted when SketchUp has moved it inside the new Group.
 
@@ -231,7 +232,7 @@ python -m unittest discover -s tests -v
 
 The current public tree automated suite is **195/195 PASS**.
 
-Native acceptance has been measured on SketchUp 2024 for the baseline bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, object delete, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control, rooted document lifecycle and CAD integrity with safe repair, including negative/rollback cases. The public HTTP MCP surface was also live-smoked at contract `0.21` with 64 tools, face-reversal repair plus integrity facts, and capability metadata schema v2 covering all 64 discovered tools on the active SketchUp model. Receipt v1 was additionally live-accepted across all twenty-seven strict actions plus read-only queries and through the public MCP operation/query paths.
+Native acceptance has been measured on SketchUp 2024 for the baseline bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, object delete, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control, rooted document lifecycle and CAD integrity with safe repair, including negative/rollback cases. The public HTTP MCP surface was live-smoked at contract `0.21` with 64 tools. Contract `0.22` keeps the 64-tool surface and corrects safety semantics: document I/O is non-transactional `external_side_effect`, native exception details are sanitized, canonical rooted-path containment is enforced for model/assets/textures, and `model_open` refuses unsaved active models. These corrections are regression-tested offline and should receive the next native smoke before extending runtime claims.
 
 `cdt-sketchup-doctor` provides offline and live health checks (`doctor`, `doctor --live`), extension install/uninstall, token repair, and a sanitized `support-bundle` that never includes credential material. The RBZ build is byte-reproducible (fixed archive metadata).
 

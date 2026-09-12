@@ -310,7 +310,7 @@ module CDTSketchUp
           coordinate_space: coordinate_space,
           error: {
             "kind" => "geometry_execution_failed",
-            "message" => "DEBUG-TEMP #{error.class}: #{error.message}",
+            "message" => "SketchUp geometry execution failed",
             "retryable" => false
           }
         )

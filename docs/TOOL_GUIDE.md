@@ -1,6 +1,6 @@
 # CDT-SketchUp Tool Guide
 
-> Status: contract 0.21 · measured live acceptance on SketchUp 2024 · Updated: 2026-09-12
+> Status: contract 0.22 · measured native baseline on SketchUp 2024 · Updated: 2026-09-12
 
 ## Runtime model
 
@@ -43,7 +43,7 @@ deprecated / replacement / preferred
 preconditions
 ```
 
-`safety_class` is one of `read_only`, `strict_mutation`, or `deprecated_legacy`. `preferred_tools` contains read-only and strict paths intended for autonomous planning; compatibility mutations remain callable for transition but appear in `compatibility_tools` and are explicitly `preferred=false`. A replacement such as `execute_geometry:create_face` names a strict action selector rather than a separate MCP tool.
+`safety_class` is one of `read_only`, `strict_mutation`, `external_side_effect`, or `deprecated_legacy`. `strict_mutation` means a native/compensated Semantic State Loop write with verified rollback semantics. `external_side_effect` is a preferred bounded file/application action whose completion is verified but which does **not** claim a SketchUp transaction or rollback. Compatibility mutations remain callable for transition but appear in `compatibility_tools` and are explicitly `preferred=false`. A replacement such as `execute_geometry:create_face` names a strict action selector rather than a separate MCP tool.
 
 `runtime_versions` records measured native evidence and is **not** an allowlist for unmeasured SketchUp versions. The currently observed bridge runtime is returned separately as `observed_runtime`.
 
@@ -69,7 +69,7 @@ Forbidden examples: `generate_wall_system`, `generate_floor_slab`, `generate_roo
 
 ## Unified receipt schema v1
 
-The semantic surface uses one additive receipt envelope. `execute_geometry` and its strict wrappers return `receipt_kind="operation"`; `get_entity_state` returns `receipt_kind="query"`. `system_capabilities` advertises `receipt_kind` and `receipt_schema_version` per tool, so clients can discover this without probing result shapes.
+The semantic surface uses discoverable receipt envelopes. `execute_geometry` and its strict wrappers return `receipt_kind="operation"`; read-only semantic queries return `receipt_kind="query"`; document save/open/export actions return `receipt_kind="external_side_effect"`. `system_capabilities` advertises `receipt_kind` and `receipt_schema_version` per tool, so clients can discover this without probing result shapes.
 
 Common receipt fields are:
 
@@ -84,7 +84,7 @@ duration_ms
 limits
 ```
 
-Operation receipts additionally expose:
+Strict operation receipts additionally expose:
 
 ```text
 action
@@ -95,6 +95,8 @@ validation
 rollback
 error
 ```
+
+External-side-effect receipts instead expose `transactional=false`, `rollback_supported=false`, `rollback_verified=false`, `side_effect_completed`, `side_effect_verified`, `validation`, and the verified file/application result. They never imply that a SketchUp `AI_Step` transaction was committed.
 
 `affected` always uses `{created, modified, deleted}` PID arrays. The native layer compares bounded before/after semantic snapshots. A PID that leaves the active context but still resolves elsewhere in the model is `modified` rather than `deleted`; this is important for grouping/extrusion, where SketchUp reparents source geometry. On a verified rollback, affected sets must return to empty and `model.before.model_fingerprint == model.after_rollback.model_fingerprint`.
 
@@ -295,7 +297,7 @@ Strict model scene creation with exact-name semantics; duplicates fail as `alrea
 
 ### `model_save()` / `model_save_as(file, overwrite=false)` / `model_open(file, if_model_guid?)` / `model_export(file, format, overwrite=false, width?, height?)` / `model_list()`
 
-Rooted document lifecycle under the owner-local `models/` directory (beside the bridge credential and asset registry). Only plain file names are accepted — traversal, absolute paths, and non-allowlisted extensions fail closed before any I/O. `model_save` requires an existing path (`model_save_failed` otherwise — use `model_save_as`); `model_save_as` enforces `.skp` plus explicit overwrite (`model_already_exists` without it); `model_open` enforces existence plus an optional stale-model GUID guard (`context_mismatch`); `model_export` supports `dae`/`kmz` through the model exporter and `png`/`jpg` through view image capture (raster exports accept optional pixel dimensions, default 1024×768). Open replaces the active model — callers must treat unsaved work as at risk. `model_list` reports neutral file metadata.
+Rooted document lifecycle under the owner-local `models/` directory (beside the bridge credential and asset registry). Only plain file names are accepted — traversal, absolute paths, non-allowlisted extensions, and canonical-path escapes through symlinks/reparse points fail closed before I/O. `model_save` requires an existing path (`model_save_failed` otherwise — use `model_save_as`); `model_save_as` enforces `.skp` plus explicit overwrite (`model_already_exists` without it); `model_open` enforces existence, requires the active model to have no unsaved changes (`unsaved_model_changes`), and supports an optional stale-model GUID guard (`context_mismatch`); `model_export` supports `dae`/`kmz` through the model exporter and `png`/`jpg` through view image capture (raster exports accept optional pixel dimensions, default 1024×768). These file/application actions are machine-labeled `external_side_effect`: completion is verified, but no SketchUp transaction or rollback is claimed. `model_list` reports neutral file metadata.
 
 ### `integrity_report(unit?)`
 
@@ -478,6 +480,8 @@ The provider never returns fake success for a failed live action. Representative
 - `model_already_exists`
 - `model_not_found`
 - `model_save_failed`
+- `model_open_failed`
+- `unsaved_model_changes`
 - `model_export_failed`
 - `repair_failed`
 - `geometry_execution_failed`
@@ -497,4 +501,4 @@ The provider never returns fake success for a failed live action. Representative
 
 ## Acceptance status
 
-Measured native acceptance on SketchUp 2024 `24.0.594` / Ruby `3.2.2` covers the live bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, Group/ComponentInstance delete, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control and rooted document lifecycle and CAD integrity with safe repair, including negative/rollback cases. The current provider exposes **64 tools** at contract **`0.21`**. The current public tree automated suite is **169/169 PASS**. A Streamable HTTP MCP smoke verified all 61 tools have metadata schema v2 descriptors, stable static capability fingerprinting, observed SketchUp `24.0.594`, strict/deprecated separation, operation/query receipt metadata, ready live status and face-reversal repair plus integrity facts. Receipt v1 itself was live-accepted for box, face, extrusion, transform, boolean, delete, group, component, place, unique, copy, array, mirror, tag, material, polyline, rectangle, circle, arc, polygon, sweep, measure, topology, overlap, asset, texture, camera, scene, document, integrity, repair, rollback, query and public MCP transport. See [Compatibility](COMPATIBILITY.md) for the supported-runtime claim.
+Measured native acceptance on SketchUp 2024 `24.0.594` / Ruby `3.2.2` covers the live bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, Group/ComponentInstance delete, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control, rooted document lifecycle and CAD integrity with safe repair, including negative/rollback cases. The current provider exposes **64 tools** at contract **`0.22`**. Contract 0.22 is a safety-honesty correction: document I/O is now classified as non-transactional `external_side_effect`, public native exception leakage is removed, rooted model/asset/texture paths use canonical containment, and `model_open` refuses unsaved active models. The underlying SketchUp 2024 native behavior was previously live-accepted at contract 0.21; the 0.22 correction is covered by the automated regression suite and should receive the next native smoke before extending runtime claims. See [Compatibility](COMPATIBILITY.md) for the supported-runtime claim.

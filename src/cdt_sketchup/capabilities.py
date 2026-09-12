@@ -159,6 +159,39 @@ def _strict(
     )
 
 
+def _external_side_effect(
+    tool: str,
+    key: str,
+    *,
+    destructive: bool,
+    identity: str,
+    idempotence: str,
+    preconditions: tuple[str, ...] = (),
+) -> CapabilityDescriptor:
+    return CapabilityDescriptor(
+        tool=tool,
+        key=key,
+        mode="live_sketchup",
+        safety_class="external_side_effect",
+        read_only=False,
+        destructive=destructive,
+        transactional=False,
+        rollback_verified=False,
+        identity_semantics=identity,
+        unit_semantics="none",
+        coordinate_space=("application",),
+        idempotence=idempotence,
+        limits={"bridge_frame_bytes": BRIDGE_FRAME_BYTES},
+        runtime_versions=VERIFIED_SKETCHUP_RUNTIME_VERSIONS,
+        deprecated=False,
+        replacement=None,
+        preferred=True,
+        receipt_kind="external_side_effect",
+        receipt_schema_version=1,
+        preconditions=preconditions,
+    )
+
+
 def _legacy(
     tool: str,
     key: str,
@@ -508,41 +541,34 @@ CAPABILITY_DESCRIPTORS: tuple[CapabilityDescriptor, ...] = (
         idempotence="not_idempotent",
         preconditions=("if_context",),
     ),
-    _strict(
+    _external_side_effect(
         "model_save",
         "sketchup.document.save",
         destructive=False,
         identity="file_path_same",
-        units="none",
         idempotence="replay_safe",
-        preconditions=(),
     ),
-    _strict(
+    _external_side_effect(
         "model_save_as",
         "sketchup.document.save_as",
         destructive=False,
         identity="file_path_new",
-        units="none",
         idempotence="conditional_overwrite",
-        preconditions=(),
     ),
-    _strict(
+    _external_side_effect(
         "model_open",
         "sketchup.document.open",
         destructive=True,
         identity="file_path_open",
-        units="none",
         idempotence="not_idempotent",
-        preconditions=(),
+        preconditions=("saved_active_model", "if_model_guid"),
     ),
-    _strict(
+    _external_side_effect(
         "model_export",
         "sketchup.document.export",
         destructive=False,
         identity="file_path_export",
-        units="none",
         idempotence="conditional_overwrite",
-        preconditions=(),
     ),
     _read(
         "model_list",

@@ -31,7 +31,7 @@ class ContractTests(unittest.TestCase):
     def test_provider_identity_is_stable(self) -> None:
         self.assertEqual(PROVIDER_ID, "cdt_sketchup")
         self.assertEqual(PROVIDER_VERSION, "0.1.0")
-        self.assertEqual(CONTRACT_VERSION, "0.21")
+        self.assertEqual(CONTRACT_VERSION, "0.22")
         self.assertEqual(COMMON_CONTRACT_VERSION, "0.1")
         self.assertEqual(SKETCHUP_EXTENSION_VERSION, "0.1")
 
@@ -321,14 +321,11 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(by_tool["scene_create"]["rollback_verified"])
         self.assertEqual(by_tool["scene_create"]["identity_semantics"], "new_page_name")
         self.assertEqual(by_tool["scene_create"]["preconditions"], ["if_context"])
-        self.assertEqual(by_tool["model_save"]["safety_class"], "strict_mutation")
-        self.assertEqual(by_tool["model_save"]["receipt_kind"], "operation")
-        self.assertEqual(by_tool["model_save_as"]["safety_class"], "strict_mutation")
-        self.assertEqual(by_tool["model_save_as"]["receipt_kind"], "operation")
-        self.assertEqual(by_tool["model_open"]["safety_class"], "strict_mutation")
-        self.assertEqual(by_tool["model_open"]["receipt_kind"], "operation")
-        self.assertEqual(by_tool["model_export"]["safety_class"], "strict_mutation")
-        self.assertEqual(by_tool["model_export"]["receipt_kind"], "operation")
+        for tool in ("model_save", "model_save_as", "model_open", "model_export"):
+            self.assertEqual(by_tool[tool]["safety_class"], "external_side_effect")
+            self.assertFalse(by_tool[tool]["transactional"])
+            self.assertFalse(by_tool[tool]["rollback_verified"])
+            self.assertEqual(by_tool[tool]["receipt_kind"], "external_side_effect")
         self.assertEqual(by_tool["model_list"]["safety_class"], "read_only")
         self.assertEqual(by_tool["model_list"]["receipt_kind"], "query")
         self.assertEqual(by_tool["integrity_report"]["safety_class"], "read_only")

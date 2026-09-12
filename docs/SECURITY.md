@@ -32,7 +32,7 @@ A transport-level response is not considered proof that geometry is correct.
 
 Strict dimensional inputs are fail-closed: accepted units are `mm|cm|m|in|ft|model`, and the only claimed coordinate space is `active_context`. Unknown units/spaces are rejected before native mutation begins; no silent world/local coordinate conversion is attempted. Legacy internal-inch mutations remain explicitly deprecated.
 
-The machine-readable capability registry prevents clients from having to guess which mutation path has stronger guarantees. `strict_mutation` means transaction + Semantic State Loop + verified rollback; compatibility mutations are explicitly marked `deprecated_legacy`, report `rollback_verified=false`, and are excluded from the preferred autonomous tool set.
+The machine-readable capability registry prevents clients from having to guess which mutation path has stronger guarantees. `strict_mutation` means Semantic State Loop execution with verified rollback semantics. File/application actions such as save/open/export are labeled `external_side_effect`, report `transactional=false` and `rollback_verified=false`, and return verified-completion receipts instead of pretending native undo/rollback exists. Compatibility mutations are explicitly marked `deprecated_legacy` and excluded from the preferred autonomous tool set.
 
 Strict operation receipts include an `affected_verified` flag. Successful strict commits set it only after bounded semantic snapshot comparison; rollback receipts set it only when the abort result and exact before/after-rollback model fingerprints prove restoration. A reparented PID that still resolves is classified as modified, not deleted.
 
@@ -48,7 +48,7 @@ Bridge and MCP bearer credentials must never be returned by MCP tools or written
 
 ## Files and assets
 
-Current released tools do not provide a raw arbitrary filesystem execution surface. Future model/asset/texture/import-export capabilities must use explicit safe roots or allowlisted registries rather than caller-selected arbitrary paths.
+Current released tools do not provide a raw arbitrary filesystem execution surface. Model files use an explicit owner-local `models/` root; component and texture assets use allowlisted registries. Plain-name/extension checks are combined with canonical `realpath` containment, including existing symlink/reparse targets and canonical parent checks for new output files, so an allowed-root entry that resolves outside the root fails closed.
 
 ## Fail-closed behavior
 
@@ -62,7 +62,9 @@ Examples of states that must fail rather than silently continue include:
 - invalid/non-manifold boolean operands;
 - semantic validation failure;
 - result semantic state exceeding configured bounds;
-- unverifiable rollback.
+- unverifiable rollback;
+- unsaved active model before `model_open`;
+- rooted file/asset target whose canonical path escapes its allowed root.
 
 ## Domain security boundary
 

@@ -198,23 +198,26 @@ module CDTSketchUp
       snapshot = semantic_active_entity_snapshot(model)
       model_fingerprint = semantic_model_fingerprint(model, active_snapshot: snapshot)
       context = receipt_context(model, model_fingerprint: model_fingerprint)
-      build_operation_receipt(
-        model,
-        receipt_id: SecureRandom.uuid,
-        started_at: started_at,
-        action: command,
-        state: state,
-        affected: empty_affected_entities,
-        validation: { "passed" => checks.all? { |check| check["passed"] }, "checks" => checks },
-        before_count: model.active_entities.length,
-        before_fingerprint: model_fingerprint,
-        after_count: model.active_entities.length,
-        after_fingerprint: model_fingerprint,
-        unit_info: { "public_unit" => "none", "resolved_unit" => "in" },
-        coordinate_space: "active_context",
-        context_before: context,
-        context: context
-      )
+      verified = checks.all? { |check| check["passed"] }
+      {
+        "receipt_schema_version" => RECEIPT_SCHEMA_VERSION,
+        "receipt_kind" => "external_side_effect",
+        "receipt_id" => SecureRandom.uuid,
+        "command" => command,
+        "action" => command,
+        "transactional" => false,
+        "rollback_supported" => false,
+        "rollback_verified" => false,
+        "side_effect_completed" => verified,
+        "side_effect_verified" => verified,
+        "context" => context,
+        "result" => state,
+        "entity_states" => [state],
+        "validation" => { "passed" => verified, "checks" => checks },
+        "error" => nil,
+        "duration_ms" => receipt_duration_ms(started_at),
+        "limits" => receipt_limits
+      }
     end
 
     def receipt_model_state(active_entity_count, model_fingerprint)
