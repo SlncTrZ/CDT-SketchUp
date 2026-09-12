@@ -638,6 +638,18 @@ class SemanticBridgeTests(unittest.TestCase):
         self.assertIn('"action.lengths_preserved"', source)
         self.assertIn('"action.no_collateral_consumed"', source)
 
+    def test_topology_closure_is_bounded_incrementally_and_reused(self) -> None:
+        source = read_extension_sources()
+        self.assertIn("def bounded_raw_topology_closure", source)
+        self.assertIn("queue.shift", source)
+        self.assertIn("vertex.edges", source)
+        self.assertIn("edge.faces", source)
+        self.assertIn("seen.length > MAX_TOPOLOGY_RESULTS", source)
+        self.assertIn('"topology_closure_too_large"', source)
+        self.assertIn("raw_topology_closure_fingerprint", source)
+        self.assertIn("bounded_raw_topology_closure(entity)", source)
+        self.assertIn("closure = bounded_raw_topology_closure(entity)", source)
+
     def test_measurement_queries_are_read_only_and_bounded(self) -> None:
         source = read_extension_sources()
         self.assertIn('"measure_distance" => :handle_measure_distance', source)

@@ -5,9 +5,77 @@ module CDTSketchUp
   class BridgeServer
     private
 
+    def raw_topology_entity?(entity)
+      entity.is_a?(Sketchup::Edge) || entity.is_a?(Sketchup::Face)
+    end
+
+    def raw_topology_neighbors(entity)
+      neighbors = if entity.is_a?(Sketchup::Face)
+                    entity.edges.to_a
+                  elsif entity.is_a?(Sketchup::Edge)
+                    edge = entity
+                    edge.faces.to_a + edge.vertices.flat_map { |vertex| vertex.edges.to_a }
+                  else
+                    []
+                  end
+      neighbors.select { |item| raw_topology_entity?(item) }
+    end
+
+    def bounded_raw_topology_closure(entity)
+      unless raw_topology_entity?(entity)
+        raise BridgeError.new("unsupported_object_type", "Topology closure requires an Edge or Face")
+      end
+
+      parent = entity.parent
+      seed_pid = entity.respond_to?(:persistent_id) ? entity.persistent_id : nil
+      unless seed_pid.is_a?(Integer) && seed_pid.positive?
+        raise BridgeError.new("topology_unresolvable", "Topology target has no persistent identity")
+      end
+      queue = [entity]
+      queued = { seed_pid => true }
+      seen = {}
+      until queue.empty?
+        current = queue.shift
+        next unless current.respond_to?(:valid?) && current.valid?
+        next unless current.respond_to?(:parent) && current.parent == parent
+
+        pid = current.respond_to?(:persistent_id) ? current.persistent_id : nil
+        unless pid.is_a?(Integer) && pid.positive?
+          raise BridgeError.new("topology_unresolvable", "Topology contains an entity without persistent identity")
+        end
+        next if seen.key?(pid)
+
+        seen[pid] = current
+        if seen.length > MAX_TOPOLOGY_RESULTS
+          raise BridgeError.new("topology_closure_too_large", "Topology closure exceeds entity limit")
+        end
+        raw_topology_neighbors(current).each do |neighbor|
+          neighbor_pid = neighbor.respond_to?(:persistent_id) ? neighbor.persistent_id : nil
+          unless neighbor_pid.is_a?(Integer) && neighbor_pid.positive?
+            raise BridgeError.new("topology_unresolvable", "Topology contains an entity without persistent identity")
+          end
+          next if queued.key?(neighbor_pid)
+          if queued.length >= MAX_TOPOLOGY_RESULTS
+            raise BridgeError.new("topology_closure_too_large", "Topology closure exceeds entity limit")
+          end
+          queued[neighbor_pid] = true
+          queue << neighbor
+        end
+      end
+      seen.values.sort_by(&:persistent_id)
+    end
+
+    def raw_topology_closure_fingerprint(model, entities)
+      facts = entities.map do |entity|
+        state = semantic_entity_state(model, entity)
+        [state["persistent_id"], state["type"], state["semantic_fingerprint"]]
+      end
+      Digest::SHA256.hexdigest(JSON.generate(facts.sort_by { |fact| fact[0] }))
+    end
+
     def connected_entities(entity)
-      if entity.is_a?(Sketchup::Face) || entity.is_a?(Sketchup::Edge)
-        entity.all_connected
+      if raw_topology_entity?(entity)
+        bounded_raw_topology_closure(entity)
       elsif entity.is_a?(Sketchup::Group)
         entity.entities.to_a
       elsif entity.is_a?(Sketchup::ComponentInstance)
@@ -17,10 +85,10 @@ module CDTSketchUp
       end
     end
 
-    def connected_persistent_ids(entity)
+    def connected_persistent_ids(entity, connected: nil)
       resolved = []
       unresolved = 0
-      connected_entities(entity).each do |item|
+      (connected || connected_entities(entity)).each do |item|
         pid = begin
           item.respond_to?(:persistent_id) ? item.persistent_id : nil
         rescue StandardError

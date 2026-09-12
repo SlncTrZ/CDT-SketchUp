@@ -657,24 +657,18 @@ module CDTSketchUp
     end
 
     def complete_groupable_connected_geometry?(entities)
-      raw_entities = entities.select do |entity|
-        entity.is_a?(Sketchup::Edge) || entity.is_a?(Sketchup::Face)
-      end
+      raw_entities = entities.select { |entity| raw_topology_entity?(entity) }
       return true if raw_entities.empty?
 
       selected_ids = raw_entities.map(&:persistent_id).sort
+      checked_ids = {}
       raw_entities.all? do |entity|
-        connected = entity.all_connected
-        if connected.length > MAX_OBJECTS
-          raise BridgeError.new(
-            "semantic_state_too_large",
-            "Connected raw geometry exceeds entity limit"
-          )
-        end
-        connected_ids = connected.select do |item|
-          item.is_a?(Sketchup::Edge) || item.is_a?(Sketchup::Face)
-        end.map(&:persistent_id).sort
-        (connected_ids - selected_ids).empty?
+        next true if checked_ids[entity.persistent_id]
+
+        closure = bounded_raw_topology_closure(entity)
+        closure_ids = closure.map(&:persistent_id).sort
+        closure_ids.each { |pid| checked_ids[pid] = true }
+        (closure_ids - selected_ids).empty?
       end
     end
 

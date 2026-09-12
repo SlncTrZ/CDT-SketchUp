@@ -251,7 +251,7 @@ Read-only measurement between any two entities: bounding-box center distance plu
 
 ### `query_topology(persistent_id)`
 
-Read-only connectivity facts for one entity: bounded connected PID set (500 max, with unresolved-entity accounting for members without persistent IDs), vertex/edge/face counts, face loop count, and manifold state. Traversal is type-aware — faces/edges use native connectivity, groups expose members, instances expose definition members — because `all_connected` does not exist on every entity class.
+Read-only connectivity facts for one entity: bounded connected PID set (500 max, with unresolved-entity accounting for members without persistent IDs), vertex/edge/face counts, face loop count, manifold state, and `topology_closure_fingerprint` for raw Edge/Face topology. Raw topology uses an incremental bounded BFS over native face/edge/vertex adjacency instead of materializing an unbounded `all_connected` result first; the same closure primitive is reused by strict grouping preflight. Groups expose members and instances expose definition members.
 
 ### `query_overlap(first_pid, second_pid, unit?)`
 
@@ -457,6 +457,8 @@ The provider never returns fake success for a failed live action. Representative
 - `transaction_start_failed`
 - `transaction_commit_failed`
 - `semantic_state_too_large`
+- `topology_closure_too_large`
+- `topology_unresolvable`
 - `geometry_execution_failed`
 - `non_isolated_face`
 - `context_mismatch`

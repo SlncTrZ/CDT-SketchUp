@@ -11,10 +11,14 @@ module CDTSketchUp
       unit_info = resolve_public_unit(model, params["unit"] || "in")
       persistent_id = query_pid_pair(params, %w[persistent_id]).first
       entity = require_entity_by_pid(model, persistent_id)
-      connected_ids, connected_unresolved = connected_persistent_ids(entity)
+      connected = connected_entities(entity)
+      connected_ids, connected_unresolved = connected_persistent_ids(entity, connected: connected)
       if connected_ids.length + connected_unresolved > MAX_TOPOLOGY_RESULTS
         raise BridgeError.new("semantic_state_too_large", "Topology exceeds entity limit")
       end
+      closure_fingerprint = if raw_topology_entity?(entity)
+                              raw_topology_closure_fingerprint(model, connected)
+                            end
       counts = semantic_geometry_counts(entity)
       loops = entity.is_a?(Sketchup::Face) ? entity.loops : []
       state = {
@@ -25,6 +29,7 @@ module CDTSketchUp
         "connected_persistent_ids" => connected_ids,
         "connected_unresolved_count" => connected_unresolved,
         "connected_truncated" => false,
+        "topology_closure_fingerprint" => closure_fingerprint,
         "vertex_count" => counts["vertex_count"],
         "edge_count" => counts["edge_count"],
         "face_count" => counts["face_count"],
@@ -36,7 +41,8 @@ module CDTSketchUp
               "query" => "query_topology",
               "entity" => semantic_entity_state(model, entity)["semantic_fingerprint"],
               "connected" => connected_ids,
-              "unresolved" => connected_unresolved
+              "unresolved" => connected_unresolved,
+              "closure" => closure_fingerprint
             }
           )
         )
