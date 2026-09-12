@@ -693,6 +693,94 @@ module CDTSketchUp
       group
     end
 
+    def validate_push_pull_topology_params(params)
+      unless params.is_a?(Hash)
+        raise BridgeError.new("invalid_argument", "push_pull_topology_face params must be an object")
+      end
+      unknown_keys = params.keys - PUSH_PULL_TOPOLOGY_PARAM_KEYS
+      unless unknown_keys.empty?
+        raise BridgeError.new(
+          "invalid_argument",
+          "push_pull_topology_face params contain unsupported keys: #{unknown_keys.sort.join(', ')}"
+        )
+      end
+      persistent_id = bounded_integer(
+        params["persistent_id"],
+        minimum: 1,
+        maximum: (2**63) - 1,
+        name: "persistent_id"
+      )
+      distance = finite_number(params["distance"], "distance")
+      raise BridgeError.new("invalid_argument", "distance must be non-zero") if distance.zero?
+      fingerprint = params["topology_closure_fingerprint"]
+      unless fingerprint.is_a?(String) && fingerprint.match?(/\A[a-f0-9]{64}\z/)
+        raise BridgeError.new(
+          "invalid_argument",
+          "topology_closure_fingerprint must be a 64-character lowercase SHA-256 hex string"
+        )
+      end
+      [persistent_id, distance, fingerprint]
+    end
+
+    def preflight_push_pull_topology_face(model, params)
+      persistent_id, = validate_push_pull_topology_params(params)
+      face = require_active_entity(model, persistent_id)
+      unless face.is_a?(Sketchup::Face)
+        raise BridgeError.new("unsupported_object_type", "push_pull_topology_face requires a Face")
+      end
+      expected_fingerprint = params["topology_closure_fingerprint"]
+      before_closure = bounded_raw_topology_closure(face)
+      actual_fingerprint = raw_topology_closure_fingerprint(model, before_closure)
+      unless actual_fingerprint == expected_fingerprint
+        raise BridgeError.new("stale_topology_state", "Raw topology changed since the closure query")
+      end
+      true
+    end
+
+    def execute_push_pull_topology_face(model, params)
+      persistent_id, distance, expected_fingerprint = validate_push_pull_topology_params(params)
+      face = require_active_entity(model, persistent_id)
+      unless face.is_a?(Sketchup::Face)
+        raise BridgeError.new("unsupported_object_type", "push_pull_topology_face requires a Face")
+      end
+
+      before_closure = bounded_raw_topology_closure(face)
+      before_closure_ids = before_closure.map(&:persistent_id).sort
+      actual_fingerprint = raw_topology_closure_fingerprint(model, before_closure)
+      unless actual_fingerprint == expected_fingerprint
+        raise BridgeError.new("stale_topology_state", "Raw topology changed before push/pull")
+      end
+
+      begin
+        face.pushpull(distance, false)
+      rescue ArgumentError, RuntimeError => error
+        log("push pull topology face failed: #{error.class}: #{error.message}")
+        raise BridgeError.new("geometry_execution_failed", "SketchUp did not push/pull the topology face")
+      end
+
+      current = model.find_entity_by_persistent_id(persistent_id)
+      unless current && current.valid? && current.is_a?(Sketchup::Face)
+        raise BridgeError.new("geometry_execution_failed", "Push/pull source face did not survive")
+      end
+      unless current.respond_to?(:parent) && current.parent == model.active_entities.parent
+        raise BridgeError.new("context_mismatch", "Push/pull source face escaped the active edit context")
+      end
+
+      after_closure = bounded_raw_topology_closure(current)
+      after_closure_ids = after_closure.map(&:persistent_id).sort
+      {
+        "entity" => current,
+        "metadata" => {
+          "target_persistent_id" => persistent_id,
+          "distance" => distance,
+          "before_topology_closure_persistent_ids" => before_closure_ids,
+          "before_topology_closure_fingerprint" => actual_fingerprint,
+          "after_topology_closure_persistent_ids" => after_closure_ids,
+          "after_topology_closure_fingerprint" => raw_topology_closure_fingerprint(model, after_closure)
+        }
+      }
+    end
+
     def isolated_face_for_extrusion?(face)
       expected_ids = ([face] + face.edges).map(&:persistent_id).sort
       actual_ids = face.all_connected.map(&:persistent_id).sort

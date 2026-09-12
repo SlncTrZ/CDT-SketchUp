@@ -41,6 +41,7 @@ module CDTSketchUp
       "create_box" => :execute_create_box,
       "create_face" => :execute_create_face,
       "extrude_face_to_group" => :execute_extrude_face_to_group,
+      "push_pull_topology_face" => :execute_push_pull_topology_face,
       "transform_entity" => :execute_transform_entity,
       "boolean_operation" => :execute_boolean_operation,
       "delete_entity" => :execute_delete_entity,
@@ -98,6 +99,7 @@ module CDTSketchUp
     CREATE_BOX_PARAM_KEYS = %w[name dimensions origin].freeze
     CREATE_FACE_PARAM_KEYS = %w[points].freeze
     EXTRUDE_FACE_PARAM_KEYS = %w[persistent_id distance group_name].freeze
+    PUSH_PULL_TOPOLOGY_PARAM_KEYS = %w[persistent_id distance topology_closure_fingerprint].freeze
     TRANSFORM_ENTITY_PARAM_KEYS = %w[persistent_id matrix].freeze
     BOOLEAN_OPERATION_PARAM_KEYS = %w[tool_pid target_pid operation_type].freeze
     DELETE_ENTITY_PARAM_KEYS = %w[persistent_id].freeze

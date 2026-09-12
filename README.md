@@ -2,7 +2,7 @@
 
 SketchUp-native MCP provider implementing a **Generic CAD Primitive / Execution Engine** with bounded native execution, semantic state and verified transactional mutation paths.
 
-> Current provider version: `0.1.0` · Contract: `0.23`
+> Current provider version: `0.1.0` · Contract: `0.24`
 > Measured native runtime: SketchUp 2024 `24.0.594` / Ruby `3.2.2`
 
 ## What it is
@@ -86,6 +86,7 @@ Current closed strict actions:
 - `boolean_operation`
 - `delete_entity`
 - `delete_topology_entity`
+- `push_pull_topology_face`
 - `group_entities`
 - `create_component`
 - `place_instance`
@@ -100,7 +101,7 @@ Current closed strict actions:
 - `create_polygon`
 - `sweep_profile`
 
-`delete_entity` remains the preferred strict object-deletion path for unlocked active-context Groups and ComponentInstances. Raw Edge/Face deletion uses the separate `execute_geometry(action="delete_topology_entity")` contract: clients first query `topology_closure_fingerprint`, then submit the target PID plus that fingerprint. The bridge rechecks the closure before and inside `AI_Step`, and commits only when every affected PID stays inside the bounded pre-mutation closure. This contract-`0.23` path is automated-regression verified; native SketchUp acceptance is still pending.
+`delete_entity` remains the preferred strict object-deletion path for unlocked active-context Groups and ComponentInstances. Raw Edge/Face deletion uses `execute_geometry(action="delete_topology_entity")`; connected-face push/pull uses `execute_geometry(action="push_pull_topology_face")`. Both require a prior `topology_closure_fingerprint` from `query_topology`, recheck that closure before and inside `AI_Step`, and commit only when affected PID accounting stays inside the bounded pre/post topology contract. Contract `0.24` is automated-regression verified; native SketchUp acceptance for the 0.22–0.24 changes is still pending.
 
 Compatibility modeling tools currently also include edge/face/group creation, selection, delete, move/rotate/scale, push/pull, box component, tags and basic materials. These older mutation paths are not claimed equivalent to the strict pre-commit semantic-validation path; see the [Tool Guide](docs/TOOL_GUIDE.md).
 
@@ -231,9 +232,9 @@ Offline tests:
 python -m unittest discover -s tests -v
 ```
 
-The current public tree automated suite is **200/200 PASS** on the measured Windows development environment.
+The current public tree automated suite is **201/201 PASS** on the measured Windows development environment.
 
-Native acceptance has been measured on SketchUp 2024 for the baseline bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, object delete, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control, rooted document lifecycle and CAD integrity with safe repair, including negative/rollback cases. The public HTTP MCP surface was live-smoked at contract `0.21` with 64 tools. Contract `0.22` corrected safety semantics for document I/O, error sanitization, rooted-path containment, and unsaved-model protection. Contract `0.23` keeps the same MCP tool count and adds topology-aware raw Edge/Face deletion as a closed `execute_geometry` action. The `0.22`/`0.23` changes are automated-regression verified and still require the next native smoke before extending runtime claims.
+Native acceptance has been measured on SketchUp 2024 for the baseline bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, object delete, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control, rooted document lifecycle and CAD integrity with safe repair, including negative/rollback cases. The public HTTP MCP surface was live-smoked at contract `0.21` with 64 tools. Contract `0.22` corrected safety semantics for document I/O, error sanitization, rooted-path containment, and unsaved-model protection. Contract `0.23` added topology-aware raw Edge/Face deletion. Contract `0.24` keeps the same MCP tool count and adds guarded connected-face push/pull as a closed `execute_geometry` action. The `0.22`–`0.24` changes are automated-regression verified and still require the next native smoke before extending runtime claims.
 
 `cdt-sketchup-doctor` provides offline and live health checks (`doctor`, `doctor --live`), extension install/uninstall, token repair, and a sanitized `support-bundle` that never includes credential material. The RBZ build is byte-reproducible (fixed archive metadata).
 

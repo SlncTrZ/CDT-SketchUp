@@ -545,6 +545,7 @@ module CDTSketchUp
     def preflight_geometry_action(model, action, action_params)
       preflight_delete_entity(model, action_params) if action == "delete_entity"
       preflight_delete_topology_entity(model, action_params) if action == "delete_topology_entity"
+      preflight_push_pull_topology_face(model, action_params) if action == "push_pull_topology_face"
       preflight_group_entities(model, action_params) if action == "group_entities"
       preflight_create_component(model, action_params) if action == "create_component"
       preflight_copy_entity(model, action_params) if action == "copy_entity"

@@ -86,7 +86,7 @@ module CDTSketchUp
             length_triplet_to_internal(point, "points[#{index}]", unit)
           end
         end
-      when "extrude_face_to_group"
+      when "extrude_face_to_group", "push_pull_topology_face"
         params["distance"] = length_to_internal_inches(params["distance"], "distance", unit)
       when "transform_entity"
         params["matrix"] = transformation_to_internal(params["matrix"], "matrix", unit)

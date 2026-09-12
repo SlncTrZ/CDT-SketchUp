@@ -199,7 +199,7 @@ module CDTSketchUp
         end
         validate_semantic_expectation_schema(
           expect,
-          require_active_entity_delta: action != "delete_topology_entity"
+          require_active_entity_delta: action != "delete_topology_entity" && action != "push_pull_topology_face"
         )
         validate_action_expectation(action, action_params, expect)
 
@@ -211,7 +211,7 @@ module CDTSketchUp
           expect,
           before_count: before_count,
           after_count: after_count,
-          check_active_entity_delta: action != "delete_topology_entity"
+          check_active_entity_delta: action != "delete_topology_entity" && action != "push_pull_topology_face"
         )
         action_checks = validate_action_semantic_invariants(
           action,

@@ -115,6 +115,20 @@ module CDTSketchUp
             "delete_topology_entity expect.type must be Edge or Face"
           )
         end
+      when "push_pull_topology_face"
+        unless expect["type"] == "Face"
+          raise BridgeError.new(
+            "invalid_argument",
+            "push_pull_topology_face requires expect.type = Face"
+          )
+        end
+        unsupported_push_pull_expect = expect.keys - %w[type tolerance]
+        unless unsupported_push_pull_expect.empty?
+          raise BridgeError.new(
+            "invalid_argument",
+            "push_pull_topology_face expect contains unsupported keys: #{unsupported_push_pull_expect.sort.join(', ')}"
+          )
+        end
       when "group_entities"
         persistent_ids, = validate_group_entities_params(action_params)
         unless Integer(expect["active_entity_delta"]) == 1 - persistent_ids.length
@@ -700,6 +714,13 @@ module CDTSketchUp
           semantic_check("action.persistent_id", metadata["target_persistent_id"], state["persistent_id"]),
           semantic_check("action.type", metadata["target_type"], state["type"])
         ]
+      when "push_pull_topology_face"
+        source_alive = entity_alive_by_pid?(Sketchup.active_model, metadata["target_persistent_id"])
+        return [
+          semantic_check("action.push_pull_source_survived", true, source_alive),
+          semantic_check("action.persistent_id", metadata["target_persistent_id"], state["persistent_id"]),
+          semantic_check("action.type", "Face", state["type"])
+        ]
       when "group_entities"
         model = Sketchup.active_model
         input_ids = metadata["input_persistent_ids"] || []
@@ -1237,6 +1258,21 @@ module CDTSketchUp
           semantic_check(
             "affected.topology_target_deleted",
             true,
+            affected["deleted"].include?(metadata["target_persistent_id"])
+          )
+        ]
+      when "push_pull_topology_face"
+        before_ids = (metadata["before_topology_closure_persistent_ids"] || []).sort
+        after_ids = (metadata["after_topology_closure_persistent_ids"] || []).sort
+        old_touched = (affected["modified"] + affected["deleted"]).uniq.sort
+        old_within_preclosure = (old_touched - before_ids).empty?
+        new_within_postclosure = (affected["created"] - after_ids).empty?
+        return [
+          semantic_check("affected.push_pull_old_within_preclosure", true, old_within_preclosure),
+          semantic_check("affected.push_pull_new_within_postclosure", true, new_within_postclosure),
+          semantic_check(
+            "affected.push_pull_source_not_deleted",
+            false,
             affected["deleted"].include?(metadata["target_persistent_id"])
           )
         ]
