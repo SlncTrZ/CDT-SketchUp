@@ -2,7 +2,7 @@
 
 SketchUp-native MCP provider implementing a **Generic CAD Primitive / Execution Engine** with bounded native execution, semantic state and verified transactional mutation paths.
 
-> Current provider version: `0.1.0` · Contract: `0.12`
+> Current provider version: `0.1.0` · Contract: `0.21`
 > Measured native runtime: SketchUp 2024 `24.0.594` / Ruby `3.2.2`
 
 ## What it is
@@ -33,6 +33,26 @@ Read/system tools:
 - `object_get`
 - `get_entity_state`
 - `definition_info`
+- `measure_distance`
+- `query_topology`
+- `query_overlap`
+- `asset_list`
+- `place_asset`
+- `texture_list`
+- `material_apply_texture`
+- `material_info`
+- `camera_get`
+- `camera_set`
+- `scene_list`
+- `scene_create`
+- `model_save`
+- `model_save_as`
+- `model_open`
+- `model_export`
+- `model_list`
+- `integrity_report`
+- `repair_reverse_face`
+- `repair_erase_degenerate`
 
 Strict Semantic State Loop surface:
 
@@ -51,6 +71,11 @@ Strict Semantic State Loop surface:
 - `linear_array`
 - `radial_array`
 - `mirror_entity`
+- `create_polyline`
+- `create_rectangle`
+- `create_circle`
+- `create_arc`
+- `create_polygon`
 
 Current closed strict actions:
 
@@ -67,6 +92,12 @@ Current closed strict actions:
 - `copy_entity`
 - `linear_array`
 - `radial_array`
+- `create_polyline`
+- `create_rectangle`
+- `create_circle`
+- `create_arc`
+- `create_polygon`
+- `sweep_profile`
 
 `delete_entity` is the preferred strict object-deletion path for unlocked active-context Groups and ComponentInstances. Raw Edge/Face deletion is intentionally not part of strict object delete because SketchUp topology deletion can affect connected geometry; that requires a separate topology-aware contract. Successful strict delete returns a tombstone state and an exact `affected.deleted` PID receipt.
 
@@ -198,9 +229,9 @@ Offline tests:
 python -m unittest discover -s tests -v
 ```
 
-The current public tree automated suite is **115/115 PASS**.
+The current public tree automated suite is **169/169 PASS**.
 
-Native acceptance has been measured on SketchUp 2024 for the baseline bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, object delete, strict group composition, strict component/instance semantics and strict copy/array/mirror duplication, including negative/rollback cases. The public HTTP MCP surface was also live-smoked at contract `0.12` with 38 tools, committed strict copy/linear/radial arrays, reflection mirroring, and capability metadata schema v2 covering all 38 discovered tools on the active SketchUp model. Receipt v1 was additionally live-accepted across all thirteen strict actions and through the public MCP operation/query paths.
+Native acceptance has been measured on SketchUp 2024 for the baseline bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, object delete, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control, rooted document lifecycle and CAD integrity with safe repair, including negative/rollback cases. The public HTTP MCP surface was also live-smoked at contract `0.21` with 64 tools, face-reversal repair plus integrity facts, and capability metadata schema v2 covering all 64 discovered tools on the active SketchUp model. Receipt v1 was additionally live-accepted across all twenty-seven strict actions plus read-only queries and through the public MCP operation/query paths.
 
 ## Public documentation
 

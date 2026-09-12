@@ -1,6 +1,6 @@
 # CDT-SketchUp Tool Guide
 
-> Status: contract 0.12 · measured live acceptance on SketchUp 2024 · Updated: 2026-09-12
+> Status: contract 0.21 · measured live acceptance on SketchUp 2024 · Updated: 2026-09-12
 
 ## Runtime model
 
@@ -144,6 +144,12 @@ Current action allowlist:
 - `copy_entity`
 - `linear_array`
 - `radial_array`
+- `create_polyline`
+- `create_rectangle`
+- `create_circle`
+- `create_arc`
+- `create_polygon`
+- `sweep_profile`
 
 The action, semantic extraction and validation all happen before commit. A successful step requires SketchUp to return a successful `commit_operation`; the response reports `commit_verified=true`.
 
@@ -237,6 +243,96 @@ Transforming an instance never alters its definition geometry fingerprint — th
 
 Read-only component definition lookup by exact GUID. Returns the definition name, group/image flags, instance count with member instance PIDs, bounds, geometry counts, and the canonical definition geometry fingerprint. It never falls back to names or indices; unknown GUIDs return `definition_not_found`.
 
+### `measure_distance(first_pid, second_pid, unit?)`
+
+Read-only measurement between any two entities: bounding-box center distance plus the minimum bounds gap (zero when boxes touch or overlap), with an explicit `overlap` boolean. Distances honor the explicit unit contract. No model mutation, no transaction.
+
+### `query_topology(persistent_id)`
+
+Read-only connectivity facts for one entity: bounded connected PID set (500 max, with unresolved-entity accounting for members without persistent IDs), vertex/edge/face counts, face loop count, and manifold state. Traversal is type-aware — faces/edges use native connectivity, groups expose members, instances expose definition members — because `all_connected` does not exist on every entity class.
+
+### `query_overlap(first_pid, second_pid, unit?)`
+
+Read-only bounding-box overlap between two entities: boolean plus the exact overlap box (nil when disjoint). Touching boxes count as overlapping. No geometric intersection edges are created — true intersection construction belongs to a future topology-aware mutation contract.
+
+### `asset_list()`
+
+Read-only listing of the owner-curated component asset registry: neutral metadata per asset (key, display name, file, size). The registry lives outside the repository (`assets/` beside the bridge credential) as an `assets.json` manifest mapping keys to files.
+
+### `place_asset(asset_key, matrix)`
+
+Strict placement of a registry asset as a new component instance at an absolute transform. The MCP caller passes only the asset key — never a path. The native bridge resolves the key through the manifest, enforces plain `.skp` file names inside the registry root (traversal and extension checks fail before any load), caps file size at 64 MiB, and loads through `definitions.load`, so repeat placements efficiently share one definition (proven live: two placements, one definition GUID). Unknown keys fail as `asset_not_found` before mutation.
+
+### `texture_list()`
+
+Read-only listing of the owner-curated texture registry (`textures.json` beside the asset manifest): neutral metadata per texture (key, file, size). Raster images only (`.png`/`.jpg`/`.jpeg`/`.bmp`), 16 MiB cap, same traversal containment as components.
+
+### `material_apply_texture(material, texture_key, width, height)`
+
+Strict application of a registry texture to an existing material at an explicit real-world size, using the native `texture.size` scale. Unknown materials fail as `material_not_found` and unknown textures as `texture_not_found`, both before any mutation. The applied dimensions are read back from the native texture object and verified exactly; the queryable material state reports real-world width/height in the requested unit plus pixel dimensions and file name. Material mutations do not move active-entity fingerprints, so the proof here is read-back verification plus abort semantics rather than fingerprint deltas — stated honestly because the loop must not pretend otherwise.
+
+### `material_info(material)`
+
+Read-only material state by exact name: color, texture file/dimensions/pixels, and fingerprint. Unknown names return `material_not_found`.
+
+### `camera_get(unit?)`
+
+Read-only active-view camera state: eye/target in the requested length unit, unitless up direction, field of view in degrees, and perspective flag, plus a camera fingerprint for stale-view guards.
+
+### `camera_set(eye, target, up?, fov?, unit?)`
+
+Strict active-view camera placement through the native `Camera#set` API (SketchUp 2024 exposes no per-component setters). Eye/target honor the explicit unit contract; `up` defaults to the current up and `fov` to the current field of view. Verified per commit: exact eye/target/fov plus a proven-orthogonal up vector (SketchUp orthogonalizes `up` against the view direction, so the invariant checks orthogonality and half-space rather than naive equality). `if_match` guards the camera fingerprint, so orbiting between query and write fails as `stale_entity_state` without mutation.
+
+Camera moves are view state, not model state: native undo does not cover them. Rollback therefore uses explicit compensation (restore previous camera, verify fingerprint) rather than pretending `abort_operation` suffices — measured live, including a stale-guard rejection that left the camera untouched.
+
+### `scene_list()`
+
+Read-only model scene registry: names and count.
+
+### `scene_create(name)`
+
+Strict model scene creation with exact-name semantics; duplicates fail as `already_exists` before mutation. Measured live: `abort_operation` does **not** revert `pages.add`, so rollback here is also explicit compensation (erase the created page, verify absence) — proven by a wrong-expectation abort that left no leaked scene. Scene update/delete remain deferred.
+
+### `model_save()` / `model_save_as(file, overwrite=false)` / `model_open(file, if_model_guid?)` / `model_export(file, format, overwrite=false, width?, height?)` / `model_list()`
+
+Rooted document lifecycle under the owner-local `models/` directory (beside the bridge credential and asset registry). Only plain file names are accepted — traversal, absolute paths, and non-allowlisted extensions fail closed before any I/O. `model_save` requires an existing path (`model_save_failed` otherwise — use `model_save_as`); `model_save_as` enforces `.skp` plus explicit overwrite (`model_already_exists` without it); `model_open` enforces existence plus an optional stale-model GUID guard (`context_mismatch`); `model_export` supports `dae`/`kmz` through the model exporter and `png`/`jpg` through view image capture (raster exports accept optional pixel dimensions, default 1024×768). Open replaces the active model — callers must treat unsaved work as at risk. `model_list` reports neutral file metadata.
+
+### `integrity_report(unit?)`
+
+Read-only generic CAD integrity facts — never discipline conclusions: per-type entity counts, degenerate edges (zero-length, 1e-6 in threshold), non-manifold edges (3+ faces), raw-edge/face tag hygiene (off `Layer0`/`Untagged` defaults), invalid transforms, unused component definitions and materials, model complexity, and a total issue count. Scans are bounded (5000 active entities, definition walk capped) with an explicit truncation flag. Reversed-face detection is intentionally absent: orientation truth lives in solid context, not in a fact query.
+
+### `repair_reverse_face(persistent_id)`
+
+Strict single-face orientation repair: same PID, flipped normal, identical area, geometry otherwise untouched. Wrong expectations abort with fingerprint-verified rollback.
+
+### `repair_erase_degenerate(persistent_id)`
+
+Strict erasure of one zero-length edge that bounds no faces, returning the exact deleted-PID receipt. Preflight rejects healthy edges (`invalid_argument`) and face-bounding degenerates (`unsupported_object_type`) before any mutation. Measured limitation, stated honestly: SketchUp merges sub-tolerance segments at creation, so provider-side fabrication of a degenerate edge for positive-path live proof is impossible — the positive path is offline-verified (schema/invariants/affected) with all negative gates live-proven. Real degenerates arrive via imported files, which is exactly the population this repair serves. Whole-model purge remains deferred: it cannot name exact affected IDs, violating the repair-flow contract.
+
+### `create_polyline(points, closed=false)`
+
+Strict edge-chain creation returning one Group. Points are 2..512 explicit triples; consecutive duplicates are rejected before `AI_Step`. The chain is built inside a fresh group so no stray top-level edges escape, and the total edge length is verified against the input geometry (proving no snapping or drift). A closed planar chain deterministically caps exactly one face with Newell-area proof; open or non-planar chains contain none. `expect` pins `active_entity_delta = 1`, `Group` type, and exact edge/vertex counts.
+
+### `create_rectangle(origin, width, height, normal)`
+
+Strict rectangle profile returning one Group containing four edges plus the capped face. The orthonormal basis is derived deterministically from the explicit plane normal (no hidden snapping), and the four corners are verified as an exact set against the requested origin/dimensions — compared in global coordinates because grouping rebases members into group-local space. Width/height must be positive; degenerate input fails before mutation.
+
+### `create_circle(center, normal, radius, segments)` / `create_arc(center, normal, radius, start_degrees, end_degrees, segments)`
+
+Strict circle/arc loops built with native `add_circle`/`add_arc` inside a fresh group (3..360 segments). Every member vertex is proven at exactly `radius` distance from the center; arc endpoints are additionally proven at the requested start/end angles. Zero radius, zero normal, or zero sweep fail before mutation. `expect` pins `active_entity_delta = 1`, `Group` type, and the exact segment count.
+
+### `create_polygon(center, normal, radius, sides)`
+
+Strict regular-polygon profile returning one Group containing the face plus its side edges (3..360 sides). Vertices are constructed deterministically on the explicit plane, then the face area is verified against the exact `sides/2·r²·sin(2π/sides)` formula and every vertex against the radius. `expect` pins `active_entity_delta = 1`, `Group` type, and exact side counts.
+
+### `sweep_profile(face_pid, path_pids)`
+
+Strict Follow-Me sweep of one profile face along an exact connected edge path (1..64 edges), returning one manifold Group. The profile face plus its boundary edges and the path form a closed world: nothing outside that set may connect to them, and the sweep consumes the path rail while the profile survives as the end cap (both outcomes are verified, never assumed). Proven per commit: no collateral consumption, exact reparenting, preserved edge lengths and profile area, manifold result with positive volume, and the exact created/modified/deleted receipt.
+
+Measured native rules worth knowing: `followme` returns only success/failure, so the resulting shell is discovered by snapshot diff and grouped in the same transaction; `add_group` rebases members into group-local coordinates, so positional checks map through the group transform.
+
+Non-isolated push/pull extrusion beyond the isolated-face special case is deliberately deferred: extruding a connected face distorts neighboring topology, which needs the topology-aware contract already deferred for raw Edge/Face deletion.
+
 ### `copy_entity(persistent_id)`
 
 Strict generic CAD copy for one unlocked active-context `Group` or `ComponentInstance`. Groups duplicate with native `copy`; instances place a new instance of the same definition at the same transform. The copy keeps the source transform and shares the source definition (instances) or geometry (groups) while receiving a new PID. `expect` must pin `active_entity_delta = 1` and the source `type`. `if_match` guards the source semantic fingerprint.
@@ -325,7 +421,7 @@ Creates a SketchUp tag (Ruby API `Layer`) or returns the existing tag of the sam
 
 ### `tag_assign(persistent_id, tag)`
 
-Assigns an existing tag to an active-context group/component instance. Raw edges/faces are intentionally refused to preserve SketchUp modeling hygiene.
+Strict tag assignment for one unlocked active-context `Group` or `ComponentInstance`. Raw edges/faces are rejected before `AI_Step` as generic SketchUp modeling hygiene, and unknown tags fail as `tag_not_found` before any mutation. The assignment keeps the same PID and provably preserves geometry and transform fingerprints; only the tag changes. `expect` must pin `active_entity_delta = 0` and the applied `tag`. `tag_create` remains the idempotent compatibility path for ensuring a tag exists.
 
 ### `material_create(name, color?)`
 
@@ -333,7 +429,7 @@ Creates or updates a material. Optional color is integer RGB `[r,g,b]`, each cha
 
 ### `material_assign(persistent_id, material, side="both")`
 
-Assigns an existing material. Faces support `front`, `back`, or `both`; non-face entities accept only `both`.
+Strict material assignment against an existing material — unknown names fail as `material_not_found` before `AI_Step`. Faces support `front`, `back`, or `both`; non-face entities accept only `both`. The assignment keeps the same PID and provably preserves geometry and transform fingerprints. Face back-material is a first-class semantic fact: it participates in the entity fingerprint, stale-write guards, and affected-set accounting exactly like front material. `expect` must pin `active_entity_delta = 0` and the applied `material`.
 
 ## Active edit-context rule
 
@@ -368,6 +464,23 @@ The provider never returns fake success for a failed live action. Representative
 - `boolean_failed`
 - `definition_not_found`
 - `copy_failed`
+- `assign_failed`
+- `sweep_failed`
+- `asset_not_found`
+- `asset_too_large`
+- `asset_path_escape`
+- `texture_not_found`
+- `texture_too_large`
+- `texture_path_escape`
+- `camera_failed`
+- `scene_failed`
+- `model_path_escape`
+- `model_already_exists`
+- `model_not_found`
+- `model_save_failed`
+- `model_export_failed`
+- `repair_failed`
+- `geometry_execution_failed`
 - `component_failed`
 - `group_failed`
 - `complexity_budget_exceeded`
@@ -384,4 +497,4 @@ The provider never returns fake success for a failed live action. Representative
 
 ## Acceptance status
 
-Measured native acceptance on SketchUp 2024 `24.0.594` / Ruby `3.2.2` covers the live bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, Group/ComponentInstance delete, strict group composition, strict component/instance semantics and strict copy/array/mirror duplication, including negative/rollback cases. The current provider exposes **38 tools** at contract **`0.12`**. The current public tree automated suite is **115/115 PASS**. A Streamable HTTP MCP smoke verified all 38 tools have metadata schema v2 descriptors, stable static capability fingerprinting, observed SketchUp `24.0.594`, strict/deprecated separation, operation/query receipt metadata, ready live status and the proven committed strict array. Receipt v1 itself was live-accepted for box, face, extrusion, transform, boolean, delete, group, component, place, unique, copy, array, mirror, rollback, query and public MCP transport. See [Compatibility](COMPATIBILITY.md) for the supported-runtime claim.
+Measured native acceptance on SketchUp 2024 `24.0.594` / Ruby `3.2.2` covers the live bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, Group/ComponentInstance delete, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control and rooted document lifecycle and CAD integrity with safe repair, including negative/rollback cases. The current provider exposes **64 tools** at contract **`0.21`**. The current public tree automated suite is **169/169 PASS**. A Streamable HTTP MCP smoke verified all 61 tools have metadata schema v2 descriptors, stable static capability fingerprinting, observed SketchUp `24.0.594`, strict/deprecated separation, operation/query receipt metadata, ready live status and face-reversal repair plus integrity facts. Receipt v1 itself was live-accepted for box, face, extrusion, transform, boolean, delete, group, component, place, unique, copy, array, mirror, tag, material, polyline, rectangle, circle, arc, polygon, sweep, measure, topology, overlap, asset, texture, camera, scene, document, integrity, repair, rollback, query and public MCP transport. See [Compatibility](COMPATIBILITY.md) for the supported-runtime claim.

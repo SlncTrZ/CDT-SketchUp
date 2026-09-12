@@ -94,6 +94,6 @@ Invalid provider capability families include discipline-specific systems such as
 
 ## Current architecture status
 
-The current released implementation exposes a Python MCP provider plus a SketchUp Ruby bridge. The strict Semantic State Loop is proven for a subset of generic mutation operations, including strict Group/ComponentInstance deletion, strict group composition, strict component/instance semantics and strict copy/array/mirror duplication at contract `0.12`; some earlier mutation tools remain compatibility paths while migration continues. Capability documentation distinguishes those paths rather than treating them as equivalent.
+The current released implementation exposes a Python MCP provider plus a SketchUp Ruby bridge. The strict Semantic State Loop is proven for a subset of generic mutation operations, including strict Group/ComponentInstance deletion, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control, rooted document lifecycle and CAD integrity with safe repair at contract `0.21`; some earlier mutation tools remain compatibility paths while migration continues. Capability documentation distinguishes those paths rather than treating them as equivalent.
 
 See [Tool Guide](TOOL_GUIDE.md), [Security](SECURITY.md), and [Compatibility](COMPATIBILITY.md).

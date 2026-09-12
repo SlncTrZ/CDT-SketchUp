@@ -31,7 +31,7 @@ class ContractTests(unittest.TestCase):
     def test_provider_identity_is_stable(self) -> None:
         self.assertEqual(PROVIDER_ID, "cdt_sketchup")
         self.assertEqual(PROVIDER_VERSION, "0.1.0")
-        self.assertEqual(CONTRACT_VERSION, "0.12")
+        self.assertEqual(CONTRACT_VERSION, "0.21")
         self.assertEqual(COMMON_CONTRACT_VERSION, "0.1")
         self.assertEqual(SKETCHUP_EXTENSION_VERSION, "0.1")
 
@@ -65,6 +65,32 @@ class ContractTests(unittest.TestCase):
                 "linear_array",
                 "radial_array",
                 "mirror_entity",
+                "create_polyline",
+                "create_rectangle",
+                "create_circle",
+                "create_arc",
+                "create_polygon",
+                "sweep_profile",
+                "measure_distance",
+                "query_topology",
+                "query_overlap",
+                "asset_list",
+                "place_asset",
+                "texture_list",
+                "material_apply_texture",
+                "material_info",
+                "camera_get",
+                "camera_set",
+                "scene_list",
+                "scene_create",
+                "model_save",
+                "model_save_as",
+                "model_open",
+                "model_export",
+                "model_list",
+                "integrity_report",
+                "repair_reverse_face",
+                "repair_erase_degenerate",
                 "definition_info",
                 "create_edge",
                 "create_face",
@@ -153,6 +179,32 @@ class ContractTests(unittest.TestCase):
         self.assertIn("linear_array", payload["preferred_tools"])
         self.assertIn("radial_array", payload["preferred_tools"])
         self.assertIn("mirror_entity", payload["preferred_tools"])
+        self.assertIn("create_polyline", payload["preferred_tools"])
+        self.assertIn("create_rectangle", payload["preferred_tools"])
+        self.assertIn("create_circle", payload["preferred_tools"])
+        self.assertIn("create_arc", payload["preferred_tools"])
+        self.assertIn("create_polygon", payload["preferred_tools"])
+        self.assertIn("sweep_profile", payload["preferred_tools"])
+        self.assertIn("measure_distance", payload["preferred_tools"])
+        self.assertIn("query_topology", payload["preferred_tools"])
+        self.assertIn("query_overlap", payload["preferred_tools"])
+        self.assertIn("asset_list", payload["preferred_tools"])
+        self.assertIn("place_asset", payload["preferred_tools"])
+        self.assertIn("texture_list", payload["preferred_tools"])
+        self.assertIn("material_apply_texture", payload["preferred_tools"])
+        self.assertIn("material_info", payload["preferred_tools"])
+        self.assertIn("camera_get", payload["preferred_tools"])
+        self.assertIn("camera_set", payload["preferred_tools"])
+        self.assertIn("scene_list", payload["preferred_tools"])
+        self.assertIn("scene_create", payload["preferred_tools"])
+        self.assertIn("model_save", payload["preferred_tools"])
+        self.assertIn("model_save_as", payload["preferred_tools"])
+        self.assertIn("model_open", payload["preferred_tools"])
+        self.assertIn("model_export", payload["preferred_tools"])
+        self.assertIn("model_list", payload["preferred_tools"])
+        self.assertIn("integrity_report", payload["preferred_tools"])
+        self.assertIn("repair_reverse_face", payload["preferred_tools"])
+        self.assertIn("repair_erase_degenerate", payload["preferred_tools"])
         self.assertNotIn("object_move", payload["preferred_tools"])
         self.assertIn("object_move", payload["compatibility_tools"])
         self.assertEqual(by_tool["delete_entity"]["receipt_kind"], "operation")
@@ -203,6 +255,94 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(by_tool["mirror_entity"]["rollback_verified"])
         self.assertEqual(by_tool["mirror_entity"]["identity_semantics"], "persistent_id_same")
         self.assertEqual(by_tool["mirror_entity"]["preconditions"], ["if_context", "if_match"])
+        self.assertEqual(by_tool["tag_assign"]["safety_class"], "strict_mutation")
+        self.assertTrue(by_tool["tag_assign"]["rollback_verified"])
+        self.assertEqual(by_tool["tag_assign"]["identity_semantics"], "persistent_id_same")
+        self.assertEqual(by_tool["tag_assign"]["preconditions"], ["if_context", "if_match"])
+        self.assertEqual(by_tool["tag_assign"]["receipt_kind"], "operation")
+        self.assertFalse(by_tool["tag_assign"]["deprecated"])
+        self.assertIn("tag_assign", payload["preferred_tools"])
+        self.assertEqual(by_tool["material_assign"]["safety_class"], "strict_mutation")
+        self.assertTrue(by_tool["material_assign"]["rollback_verified"])
+        self.assertEqual(by_tool["material_assign"]["identity_semantics"], "persistent_id_same")
+        self.assertEqual(by_tool["material_assign"]["preconditions"], ["if_context", "if_match"])
+        self.assertEqual(by_tool["material_assign"]["receipt_kind"], "operation")
+        self.assertFalse(by_tool["material_assign"]["deprecated"])
+        self.assertIn("material_assign", payload["preferred_tools"])
+        self.assertEqual(by_tool["create_polyline"]["safety_class"], "strict_mutation")
+        self.assertTrue(by_tool["create_polyline"]["rollback_verified"])
+        self.assertEqual(by_tool["create_polyline"]["identity_semantics"], "new_group_edge_chain")
+        self.assertEqual(by_tool["create_polyline"]["preconditions"], ["if_context"])
+        self.assertEqual(by_tool["create_rectangle"]["safety_class"], "strict_mutation")
+        self.assertEqual(by_tool["create_rectangle"]["identity_semantics"], "new_group_rectangle")
+        self.assertEqual(by_tool["create_circle"]["safety_class"], "strict_mutation")
+        self.assertEqual(by_tool["create_circle"]["identity_semantics"], "new_group_circle")
+        self.assertEqual(by_tool["create_arc"]["safety_class"], "strict_mutation")
+        self.assertEqual(by_tool["create_polygon"]["safety_class"], "strict_mutation")
+        self.assertEqual(by_tool["create_polygon"]["identity_semantics"], "new_group_polygon")
+        self.assertEqual(by_tool["sweep_profile"]["safety_class"], "strict_mutation")
+        self.assertTrue(by_tool["sweep_profile"]["rollback_verified"])
+        self.assertEqual(by_tool["sweep_profile"]["identity_semantics"], "profile_path_reparented_new_group_pid")
+        self.assertEqual(by_tool["sweep_profile"]["preconditions"], ["if_context", "if_match_set"])
+        self.assertEqual(by_tool["sweep_profile"]["limits"]["max_path_edges"], 64)
+        self.assertEqual(by_tool["measure_distance"]["safety_class"], "read_only")
+        self.assertEqual(by_tool["measure_distance"]["receipt_kind"], "query")
+        self.assertEqual(by_tool["measure_distance"]["unit_semantics"], "explicit:mm|cm|m|in|ft|model")
+        self.assertEqual(by_tool["query_topology"]["safety_class"], "read_only")
+        self.assertEqual(by_tool["query_topology"]["receipt_kind"], "query")
+        self.assertEqual(by_tool["query_overlap"]["safety_class"], "read_only")
+        self.assertEqual(by_tool["query_overlap"]["receipt_kind"], "query")
+        self.assertEqual(by_tool["asset_list"]["safety_class"], "read_only")
+        self.assertEqual(by_tool["asset_list"]["receipt_kind"], "query")
+        self.assertFalse(by_tool["asset_list"]["deprecated"])
+        self.assertEqual(by_tool["place_asset"]["safety_class"], "strict_mutation")
+        self.assertTrue(by_tool["place_asset"]["rollback_verified"])
+        self.assertEqual(by_tool["place_asset"]["identity_semantics"], "new_instance_shared_definition")
+        self.assertEqual(by_tool["place_asset"]["preconditions"], ["if_context"])
+        self.assertEqual(by_tool["place_asset"]["limits"]["max_asset_bytes"], 67108864)
+        self.assertEqual(by_tool["texture_list"]["safety_class"], "read_only")
+        self.assertEqual(by_tool["texture_list"]["receipt_kind"], "query")
+        self.assertEqual(by_tool["material_info"]["safety_class"], "read_only")
+        self.assertEqual(by_tool["material_info"]["receipt_kind"], "query")
+        self.assertEqual(by_tool["material_apply_texture"]["safety_class"], "strict_mutation")
+        self.assertTrue(by_tool["material_apply_texture"]["rollback_verified"])
+        self.assertEqual(by_tool["material_apply_texture"]["identity_semantics"], "material_name_same")
+        self.assertEqual(by_tool["material_apply_texture"]["preconditions"], ["if_context"])
+        self.assertEqual(by_tool["material_apply_texture"]["limits"]["max_texture_bytes"], 16777216)
+        self.assertEqual(by_tool["camera_get"]["safety_class"], "read_only")
+        self.assertEqual(by_tool["camera_get"]["receipt_kind"], "query")
+        self.assertEqual(by_tool["camera_set"]["safety_class"], "strict_mutation")
+        self.assertTrue(by_tool["camera_set"]["rollback_verified"])
+        self.assertEqual(by_tool["camera_set"]["identity_semantics"], "active_view_camera")
+        self.assertEqual(by_tool["camera_set"]["preconditions"], ["if_context", "if_match"])
+        self.assertEqual(by_tool["scene_list"]["safety_class"], "read_only")
+        self.assertEqual(by_tool["scene_list"]["receipt_kind"], "query")
+        self.assertEqual(by_tool["scene_create"]["safety_class"], "strict_mutation")
+        self.assertTrue(by_tool["scene_create"]["rollback_verified"])
+        self.assertEqual(by_tool["scene_create"]["identity_semantics"], "new_page_name")
+        self.assertEqual(by_tool["scene_create"]["preconditions"], ["if_context"])
+        self.assertEqual(by_tool["model_save"]["safety_class"], "strict_mutation")
+        self.assertEqual(by_tool["model_save"]["receipt_kind"], "operation")
+        self.assertEqual(by_tool["model_save_as"]["safety_class"], "strict_mutation")
+        self.assertEqual(by_tool["model_save_as"]["receipt_kind"], "operation")
+        self.assertEqual(by_tool["model_open"]["safety_class"], "strict_mutation")
+        self.assertEqual(by_tool["model_open"]["receipt_kind"], "operation")
+        self.assertEqual(by_tool["model_export"]["safety_class"], "strict_mutation")
+        self.assertEqual(by_tool["model_export"]["receipt_kind"], "operation")
+        self.assertEqual(by_tool["model_list"]["safety_class"], "read_only")
+        self.assertEqual(by_tool["model_list"]["receipt_kind"], "query")
+        self.assertEqual(by_tool["integrity_report"]["safety_class"], "read_only")
+        self.assertEqual(by_tool["integrity_report"]["receipt_kind"], "query")
+        self.assertEqual(by_tool["repair_reverse_face"]["safety_class"], "strict_mutation")
+        self.assertTrue(by_tool["repair_reverse_face"]["rollback_verified"])
+        self.assertEqual(by_tool["repair_reverse_face"]["identity_semantics"], "persistent_id_same")
+        self.assertEqual(by_tool["repair_reverse_face"]["preconditions"], ["if_context", "if_match"])
+        self.assertEqual(by_tool["repair_erase_degenerate"]["safety_class"], "strict_mutation")
+        self.assertTrue(by_tool["repair_erase_degenerate"]["rollback_verified"])
+        self.assertEqual(by_tool["repair_erase_degenerate"]["identity_semantics"], "persistent_id_consumed")
+        self.assertEqual(by_tool["repair_erase_degenerate"]["preconditions"], ["if_context", "if_match"])
+        self.assertTrue(by_tool["tag_create"]["deprecated"] or not by_tool["tag_create"]["preferred"])
+        self.assertTrue(by_tool["material_create"]["deprecated"] or not by_tool["material_create"]["preferred"])
         self.assertEqual(by_tool["get_entity_state"]["preconditions"], [])
 
     def test_capability_fingerprint_is_deterministic_and_runtime_status_independent(self) -> None:

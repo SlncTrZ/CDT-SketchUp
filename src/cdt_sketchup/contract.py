@@ -11,7 +11,7 @@ from .capabilities import TOOL_NAMES, build_capability_payload
 PROVIDER_ID = "cdt_sketchup"
 PROVIDER_NAME = "CDT-SketchUp"
 PROVIDER_VERSION = "0.1.0"
-CONTRACT_VERSION = "0.12"
+CONTRACT_VERSION = "0.21"
 COMMON_CONTRACT_VERSION = "0.1"
 SKETCHUP_EXTENSION_VERSION = "0.1"
 

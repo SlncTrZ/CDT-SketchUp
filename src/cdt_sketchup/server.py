@@ -120,12 +120,12 @@ def _reflection_matrix(plane_point: list[float], plane_normal: list[float]) -> l
     ]
     return _matrix_multiply(_translation_matrix([px, py, pz]), _matrix_multiply(linear, _translation_matrix([-px, -py, -pz])))
 
-async def _strict_object_guards(persistent_id:int, *, unit:str, coordinate_space:str, if_context:dict[str,str]|None, if_match:str|None)->dict[str,Any]:
+async def _strict_object_guards(persistent_id:int, *, unit:str, coordinate_space:str, if_context:dict[str,str]|None, if_match:str|None, allowed:tuple[str,...]=("Group","ComponentInstance"), kind:str="Duplication")->dict[str,Any]:
     unit=validate_public_unit(unit); coordinate_space=validate_coordinate_space(coordinate_space)
     receipt=await _call_bridge("get_entity_state",{"persistent_id":persistent_id,"unit":unit,"coordinate_space":coordinate_space})
     if receipt.get("ok") is False: return receipt
     state=receipt.get("result",{}); obj_type=state.get("type")
-    if obj_type not in ("Group","ComponentInstance"): return _error("unsupported_object_type","Duplication requires a group/component instance.",retryable=False)
+    if obj_type not in allowed: return _error("unsupported_object_type",f"{kind} does not support this entity type.",retryable=False)
     current_context={key:receipt["context"][key] for key in ("id","revision")}
     if if_context is not None and if_context != current_context: return _error("context_mismatch","Active model/edit context changed since the supplied receipt.",retryable=False)
     if if_match is not None and if_match != receipt.get("entity_fingerprint"): return _error("stale_entity_state","Target entity state changed since the supplied receipt.",retryable=False)
@@ -545,6 +545,505 @@ async def mirror_entity(persistent_id:int, plane_point:list[float], plane_normal
     return await _strict_relative_transform(persistent_id,_reflection_matrix(plane_point,plane_normal),unit=unit,coordinate_space=coordinate_space,if_context=if_context,if_match=if_match)
 
 @mcp.tool()
+async def create_polyline(
+    points: list[list[float]],
+    closed: bool = False,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Create a strict edge-chain polyline grouped as one object."""
+    unit = validate_public_unit(unit)
+    coordinate_space = validate_coordinate_space(coordinate_space)
+    expect: dict[str, Any] = {"active_entity_delta": 1, "type": "Group"}
+    try:
+        tuples = [tuple(p) for p in points]
+        edges = len(tuples) - 1 + (1 if closed and tuples[0] != tuples[-1] else 0)
+        expect["edge_count"] = edges
+        expect["vertex_count"] = len(set(tuples))
+    except TypeError:
+        pass
+    payload: dict[str, Any] = {
+        "action": "create_polyline",
+        "params": {"points": points, "closed": closed},
+        "expect": expect,
+        "unit": unit,
+        "coordinate_space": coordinate_space,
+    }
+    if if_context is not None:
+        payload["if_context"] = if_context
+    return await _call_bridge("execute_geometry", payload)
+
+
+@mcp.tool()
+async def create_rectangle(
+    origin: list[float],
+    width: float,
+    height: float,
+    normal: list[float],
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Create a strict rectangle face from origin, dimensions and plane normal."""
+    unit = validate_public_unit(unit)
+    coordinate_space = validate_coordinate_space(coordinate_space)
+    payload: dict[str, Any] = {
+        "action": "create_rectangle",
+        "params": {"origin": origin, "width": width, "height": height, "normal": normal},
+        "expect": {
+            "active_entity_delta": 1,
+            "type": "Group",
+            "edge_count": 4,
+            "vertex_count": 4,
+        },
+        "unit": unit,
+        "coordinate_space": coordinate_space,
+    }
+    if if_context is not None:
+        payload["if_context"] = if_context
+    return await _call_bridge("execute_geometry", payload)
+
+
+@mcp.tool()
+async def create_circle(
+    center: list[float],
+    normal: list[float],
+    radius: float,
+    segments: int,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Create a strict circle edge loop grouped as one object."""
+    unit = validate_public_unit(unit)
+    coordinate_space = validate_coordinate_space(coordinate_space)
+    payload: dict[str, Any] = {
+        "action": "create_circle",
+        "params": {"center": center, "normal": normal, "radius": radius, "segments": segments},
+        "expect": {"active_entity_delta": 1, "type": "Group", "edge_count": segments},
+        "unit": unit,
+        "coordinate_space": coordinate_space,
+    }
+    if if_context is not None:
+        payload["if_context"] = if_context
+    return await _call_bridge("execute_geometry", payload)
+
+
+@mcp.tool()
+async def create_arc(
+    center: list[float],
+    normal: list[float],
+    radius: float,
+    start_degrees: float,
+    end_degrees: float,
+    segments: int,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Create a strict arc edge chain grouped as one object."""
+    unit = validate_public_unit(unit)
+    coordinate_space = validate_coordinate_space(coordinate_space)
+    payload: dict[str, Any] = {
+        "action": "create_arc",
+        "params": {
+            "center": center,
+            "normal": normal,
+            "radius": radius,
+            "start_degrees": start_degrees,
+            "end_degrees": end_degrees,
+            "segments": segments,
+        },
+        "expect": {"active_entity_delta": 1, "type": "Group", "edge_count": segments},
+        "unit": unit,
+        "coordinate_space": coordinate_space,
+    }
+    if if_context is not None:
+        payload["if_context"] = if_context
+    return await _call_bridge("execute_geometry", payload)
+
+
+@mcp.tool()
+async def create_polygon(
+    center: list[float],
+    normal: list[float],
+    radius: float,
+    sides: int,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Create a strict regular-polygon face from center, normal, radius and side count."""
+    unit = validate_public_unit(unit)
+    coordinate_space = validate_coordinate_space(coordinate_space)
+    payload: dict[str, Any] = {
+        "action": "create_polygon",
+        "params": {"center": center, "normal": normal, "radius": radius, "sides": sides},
+        "expect": {
+            "active_entity_delta": 1,
+            "type": "Group",
+            "edge_count": sides,
+            "vertex_count": sides,
+        },
+        "unit": unit,
+        "coordinate_space": coordinate_space,
+    }
+    if if_context is not None:
+        payload["if_context"] = if_context
+    return await _call_bridge("execute_geometry", payload)
+
+
+@mcp.tool()
+async def sweep_profile(
+    face_pid: int,
+    path_pids: list[int],
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+    if_match: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Sweep an isolated profile face along a connected edge path into a manifold group."""
+    unit = validate_public_unit(unit)
+    coordinate_space = validate_coordinate_space(coordinate_space)
+    face_receipt = await _call_bridge(
+        "get_entity_state",
+        {"persistent_id": face_pid, "unit": unit, "coordinate_space": coordinate_space},
+    )
+    if face_receipt.get("ok") is False:
+        return face_receipt
+    face_result = face_receipt.get("result", {})
+    if face_result.get("type") != "Face":
+        return _error("unsupported_object_type", "Sweep profile must be a Face.", retryable=False)
+    face_edge_ids = (face_result.get("hierarchy") or {}).get("edge_persistent_ids")
+    if not isinstance(face_edge_ids, list):
+        raise ValueError("profile face is too large to sweep exactly")
+    full_inputs = [face_pid, *face_edge_ids, *path_pids]
+    payload: dict[str, Any] = {
+        "action": "sweep_profile",
+        "params": {"face_pid": face_pid, "path_pids": path_pids},
+        "expect": {
+            "active_entity_delta": 1 - len(full_inputs),
+            "type": "Group",
+            "manifold": True,
+        },
+        "unit": unit,
+        "coordinate_space": coordinate_space,
+    }
+    if if_context is not None:
+        payload["if_context"] = if_context
+    if if_match is not None:
+        payload["if_match"] = if_match
+    return await _call_bridge("execute_geometry", payload)
+
+
+@mcp.tool()
+async def measure_distance(
+    first_pid: int,
+    second_pid: int,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+) -> dict[str, Any]:
+    """Measure center distance and bounds gap between two entities."""
+    unit = validate_public_unit(unit)
+    return await _call_bridge(
+        "measure_distance", {"first_pid": first_pid, "second_pid": second_pid, "unit": unit}
+    )
+
+
+@mcp.tool()
+async def query_topology(
+    persistent_id: int,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+) -> dict[str, Any]:
+    """Return bounded connectivity and loop facts for one entity."""
+    unit = validate_public_unit(unit)
+    return await _call_bridge("query_topology", {"persistent_id": persistent_id, "unit": unit})
+
+
+@mcp.tool()
+async def query_overlap(
+    first_pid: int,
+    second_pid: int,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+) -> dict[str, Any]:
+    """Report bounding-box overlap between two entities."""
+    unit = validate_public_unit(unit)
+    return await _call_bridge(
+        "query_overlap", {"first_pid": first_pid, "second_pid": second_pid, "unit": unit}
+    )
+
+
+@mcp.tool()
+async def asset_list(
+    unit: str = DEFAULT_PUBLIC_UNIT,
+) -> dict[str, Any]:
+    """List owner-curated component assets available for strict placement."""
+    unit = validate_public_unit(unit)
+    return await _call_bridge("asset_list", {"unit": unit})
+
+
+@mcp.tool()
+async def place_asset(
+    asset_key: str,
+    matrix: list[float],
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Place a new instance of a registry asset at an absolute transform."""
+    unit = validate_public_unit(unit)
+    coordinate_space = validate_coordinate_space(coordinate_space)
+    registry = await _call_bridge("asset_list", {"unit": unit})
+    if registry.get("ok") is False:
+        return registry
+    assets = registry.get("assets", [])
+    match = next((row for row in assets if row.get("asset_key") == asset_key), None)
+    if match is None:
+        return _error("asset_not_found", "Component asset was not found.", retryable=False)
+    payload: dict[str, Any] = {
+        "action": "place_asset",
+        "params": {"asset_key": asset_key, "matrix": matrix},
+        "expect": {
+            "active_entity_delta": 1,
+            "type": "ComponentInstance",
+            "transformation": matrix,
+        },
+        "unit": unit,
+        "coordinate_space": coordinate_space,
+    }
+    if if_context is not None:
+        payload["if_context"] = if_context
+    return await _call_bridge("execute_geometry", payload)
+
+
+@mcp.tool()
+async def texture_list(
+    unit: str = DEFAULT_PUBLIC_UNIT,
+) -> dict[str, Any]:
+    """List owner-curated texture assets available for material use."""
+    unit = validate_public_unit(unit)
+    return await _call_bridge("texture_list", {"unit": unit})
+
+
+@mcp.tool()
+async def material_apply_texture(
+    material: str,
+    texture_key: str,
+    width: float,
+    height: float,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Apply a registry texture to a material at an explicit real-world size."""
+    unit = validate_public_unit(unit)
+    coordinate_space = validate_coordinate_space(coordinate_space)
+    payload: dict[str, Any] = {
+        "action": "material_apply_texture",
+        "params": {"material": material, "texture_key": texture_key, "width": width, "height": height},
+        "expect": {"active_entity_delta": 0, "material": material},
+        "unit": unit,
+        "coordinate_space": coordinate_space,
+    }
+    if if_context is not None:
+        payload["if_context"] = if_context
+    return await _call_bridge("execute_geometry", payload)
+
+
+@mcp.tool()
+async def material_info(
+    material: str,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+) -> dict[str, Any]:
+    """Return one material state with texture facts by name."""
+    unit = validate_public_unit(unit)
+    return await _call_bridge("material_info", {"material": material, "unit": unit})
+
+
+@mcp.tool()
+async def camera_get(
+    unit: str = DEFAULT_PUBLIC_UNIT,
+) -> dict[str, Any]:
+    """Return the active view camera state in an explicit length unit."""
+    unit = validate_public_unit(unit)
+    return await _call_bridge("camera_get", {"unit": unit})
+
+
+@mcp.tool()
+async def camera_set(
+    eye: list[float],
+    target: list[float],
+    up: list[float] | None = None,
+    fov: float | None = None,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+    if_match: str | None = None,
+) -> dict[str, Any]:
+    """Set the active view camera with optional stale-view guards."""
+    unit = validate_public_unit(unit)
+    coordinate_space = validate_coordinate_space(coordinate_space)
+    if up is None or fov is None:
+        current = await _call_bridge("camera_get", {"unit": unit})
+        if current.get("ok") is False:
+            return current
+        if up is None:
+            up = current.get("camera_up", [0.0, 1.0, 0.0])
+        if fov is None:
+            fov = current.get("camera_fov", 35.0)
+    payload: dict[str, Any] = {
+        "action": "camera_set",
+        "params": {"eye": eye, "target": target, "up": up, "fov": fov},
+        "expect": {"active_entity_delta": 0, "camera_fov": fov},
+        "unit": unit,
+        "coordinate_space": coordinate_space,
+    }
+    if if_context is not None:
+        payload["if_context"] = if_context
+    if if_match is not None:
+        payload["if_match"] = if_match
+    return await _call_bridge("execute_geometry", payload)
+
+
+@mcp.tool()
+async def scene_list(
+    unit: str = DEFAULT_PUBLIC_UNIT,
+) -> dict[str, Any]:
+    """List model scenes by name."""
+    unit = validate_public_unit(unit)
+    return await _call_bridge("scene_list", {"unit": unit})
+
+
+@mcp.tool()
+async def scene_create(
+    name: str,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Create one model scene with an exact name."""
+    unit = validate_public_unit(unit)
+    coordinate_space = validate_coordinate_space(coordinate_space)
+    payload: dict[str, Any] = {
+        "action": "scene_create",
+        "params": {"name": name},
+        "expect": {"active_entity_delta": 0, "scene_name": name},
+        "unit": unit,
+        "coordinate_space": coordinate_space,
+    }
+    if if_context is not None:
+        payload["if_context"] = if_context
+    return await _call_bridge("execute_geometry", payload)
+
+
+@mcp.tool()
+async def model_save() -> dict[str, Any]:
+    """Save the active model to its current path."""
+    return await _call_bridge("model_save", {})
+
+
+@mcp.tool()
+async def model_save_as(file: str, overwrite: bool = False) -> dict[str, Any]:
+    """Save the active model under a rooted file name with explicit overwrite."""
+    return await _call_bridge("model_save_as", {"file": file, "overwrite": overwrite})
+
+
+@mcp.tool()
+async def model_open(file: str, if_model_guid: str | None = None) -> dict[str, Any]:
+    """Open a rooted model file, optionally guarded by the current model GUID."""
+    params: dict[str, Any] = {"file": file}
+    if if_model_guid is not None:
+        params["if_model_guid"] = if_model_guid
+    return await _call_bridge("model_open", params)
+
+
+@mcp.tool()
+async def model_export(
+    file: str,
+    format: str,
+    overwrite: bool = False,
+    width: int | None = None,
+    height: int | None = None,
+) -> dict[str, Any]:
+    """Export the active model to a rooted file in a supported format."""
+    params: dict[str, Any] = {"file": file, "format": format, "overwrite": overwrite}
+    if width is not None:
+        params["width"] = width
+    if height is not None:
+        params["height"] = height
+    return await _call_bridge("model_export", params)
+
+
+@mcp.tool()
+async def model_list() -> dict[str, Any]:
+    """List saved models in the rooted models directory."""
+    return await _call_bridge("model_list", {})
+
+
+@mcp.tool()
+async def integrity_report(
+    unit: str = DEFAULT_PUBLIC_UNIT,
+) -> dict[str, Any]:
+    """Report generic CAD integrity facts without discipline conclusions."""
+    unit = validate_public_unit(unit)
+    return await _call_bridge("integrity_report", {"unit": unit})
+
+
+@mcp.tool()
+async def repair_reverse_face(
+    persistent_id: int,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+    if_match: str | None = None,
+) -> dict[str, Any]:
+    """Strictly reverse one face with stale-state guards."""
+    guards = await _strict_object_guards(
+        persistent_id, unit=unit, coordinate_space=coordinate_space,
+        if_context=if_context, if_match=if_match,
+        allowed=("Face",), kind="Face repair",
+    )
+    if guards.get("ok") is False:
+        return guards
+    return await _call_bridge("execute_geometry", {
+        "action": "repair_reverse_face",
+        "params": {"persistent_id": persistent_id},
+        "expect": {"active_entity_delta": 0, "type": "Face"},
+        "unit": guards["unit"],
+        "coordinate_space": guards["coordinate_space"],
+        "if_context": guards["context"],
+        "if_match": guards["match"],
+    })
+
+
+@mcp.tool()
+async def repair_erase_degenerate(
+    persistent_id: int,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+    if_match: str | None = None,
+) -> dict[str, Any]:
+    """Strictly erase one degenerate edge with stale-state guards."""
+    guards = await _strict_object_guards(
+        persistent_id, unit=unit, coordinate_space=coordinate_space,
+        if_context=if_context, if_match=if_match,
+        allowed=("Edge",), kind="Degenerate repair",
+    )
+    if guards.get("ok") is False:
+        return guards
+    return await _call_bridge("execute_geometry", {
+        "action": "repair_erase_degenerate",
+        "params": {"persistent_id": persistent_id},
+        "expect": {"active_entity_delta": -1, "deleted": True},
+        "unit": guards["unit"],
+        "coordinate_space": guards["coordinate_space"],
+        "if_context": guards["context"],
+        "if_match": guards["match"],
+    })
+
+
+@mcp.tool()
 async def definition_info(
     definition_guid: str,
     unit: str = DEFAULT_PUBLIC_UNIT,
@@ -663,12 +1162,27 @@ async def tag_create(name: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def tag_assign(persistent_id: int, tag: str) -> dict[str, Any]:
-    """Assign one active-context entity to a SketchUp tag."""
-    return await _call_bridge(
-        "tag_assign",
-        {"persistent_id": persistent_id, "tag": tag},
-    )
+async def tag_assign(
+    persistent_id: int,
+    tag: str,
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+    if_match: str | None = None,
+) -> dict[str, Any]:
+    """Strictly assign one object to an existing tag with stale-write guards."""
+    guards = await _strict_object_guards(persistent_id, unit=unit, coordinate_space=coordinate_space, if_context=if_context, if_match=if_match, kind="Tag assignment")
+    if guards.get("ok") is False:
+        return guards
+    return await _call_bridge("execute_geometry", {
+        "action": "tag_assign",
+        "params": {"persistent_id": persistent_id, "tag": tag},
+        "expect": {"active_entity_delta": 0, "type": guards["type"], "tag": tag},
+        "unit": guards["unit"],
+        "coordinate_space": guards["coordinate_space"],
+        "if_context": guards["context"],
+        "if_match": guards["match"],
+    })
 
 
 @mcp.tool()
@@ -685,16 +1199,24 @@ async def material_assign(
     persistent_id: int,
     material: str,
     side: str = "both",
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+    if_match: str | None = None,
 ) -> dict[str, Any]:
-    """Assign a material; faces support front/back/both side semantics."""
-    return await _call_bridge(
-        "material_assign",
-        {
-            "persistent_id": persistent_id,
-            "material": material,
-            "side": side,
-        },
-    )
+    """Strictly assign an existing material; faces support front/back/both side semantics."""
+    guards = await _strict_object_guards(persistent_id, unit=unit, coordinate_space=coordinate_space, if_context=if_context, if_match=if_match, allowed=("Group", "ComponentInstance", "Face"), kind="Material assignment")
+    if guards.get("ok") is False:
+        return guards
+    return await _call_bridge("execute_geometry", {
+        "action": "material_assign",
+        "params": {"persistent_id": persistent_id, "material": material, "side": side},
+        "expect": {"active_entity_delta": 0, "type": guards["type"], "material": material},
+        "unit": guards["unit"],
+        "coordinate_space": guards["coordinate_space"],
+        "if_context": guards["context"],
+        "if_match": guards["match"],
+    })
 
 
 class BearerAuthMiddleware:

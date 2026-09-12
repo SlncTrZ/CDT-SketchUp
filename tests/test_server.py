@@ -50,6 +50,32 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "linear_array",
                 "radial_array",
                 "mirror_entity",
+                "create_polyline",
+                "create_rectangle",
+                "create_circle",
+                "create_arc",
+                "create_polygon",
+                "sweep_profile",
+                "measure_distance",
+                "query_topology",
+                "query_overlap",
+                "asset_list",
+                "place_asset",
+                "texture_list",
+                "material_apply_texture",
+                "material_info",
+                "camera_get",
+                "camera_set",
+                "scene_list",
+                "scene_create",
+                "model_save",
+                "model_save_as",
+                "model_open",
+                "model_export",
+                "model_list",
+                "integrity_report",
+                "repair_reverse_face",
+                "repair_erase_degenerate",
                 "definition_info",
                 "create_edge",
                 "create_face",
@@ -525,6 +551,472 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 result = await client.call_tool("definition_info", {"definition_guid": "g" * 32})
         self.assertFalse(result.is_error)
         call.assert_awaited_once_with("definition_info", {"definition_guid": "g" * 32, "unit": "in"})
+
+    async def test_tag_assign_queries_then_uses_strict_engine(self) -> None:
+        context = {"id": "a" * 64, "revision": "b" * 64}
+        fingerprint = "c" * 64
+        query_receipt = {
+            "context": context,
+            "entity_fingerprint": fingerprint,
+            "result": {"persistent_id": 42, "type": "ComponentInstance"},
+        }
+        call = AsyncMock(side_effect=[query_receipt, {"committed": True, "persistent_id": 42}])
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool("tag_assign", {"persistent_id": 42, "tag": "Walls"})
+        self.assertFalse(result.is_error)
+        self.assertEqual(call.await_count, 2)
+        self.assertNotIn("tag_assign", [entry.args[0] for entry in call.await_args_list])
+        strict = call.await_args_list[1].args
+        self.assertEqual(strict[0], "execute_geometry")
+        self.assertEqual(strict[1]["action"], "tag_assign")
+        self.assertEqual(strict[1]["params"], {"persistent_id": 42, "tag": "Walls"})
+        self.assertEqual(strict[1]["expect"], {"active_entity_delta": 0, "type": "ComponentInstance", "tag": "Walls"})
+        self.assertEqual(strict[1]["if_context"], context)
+        self.assertEqual(strict[1]["if_match"], fingerprint)
+
+    async def test_material_assign_queries_then_uses_strict_engine(self) -> None:
+        context = {"id": "a" * 64, "revision": "b" * 64}
+        fingerprint = "c" * 64
+        query_receipt = {
+            "context": context,
+            "entity_fingerprint": fingerprint,
+            "result": {"persistent_id": 42, "type": "ComponentInstance"},
+        }
+        call = AsyncMock(side_effect=[query_receipt, {"committed": True, "persistent_id": 42}])
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "material_assign", {"persistent_id": 42, "material": "Brick", "side": "both"}
+                )
+        self.assertFalse(result.is_error)
+        self.assertEqual(call.await_count, 2)
+        self.assertNotIn("material_assign", [entry.args[0] for entry in call.await_args_list])
+        strict = call.await_args_list[1].args
+        self.assertEqual(strict[0], "execute_geometry")
+        self.assertEqual(strict[1]["action"], "material_assign")
+        self.assertEqual(
+            strict[1]["params"], {"persistent_id": 42, "material": "Brick", "side": "both"}
+        )
+        self.assertEqual(
+            strict[1]["expect"],
+            {"active_entity_delta": 0, "type": "ComponentInstance", "material": "Brick"},
+        )
+        self.assertEqual(strict[1]["if_context"], context)
+        self.assertEqual(strict[1]["if_match"], fingerprint)
+
+    async def test_create_polyline_forwards_points_and_counts(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
+        points = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 10.0, 0.0]]
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "create_polyline", {"points": points, "closed": False, "unit": "mm"}
+                )
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with(
+            "execute_geometry",
+            {
+                "action": "create_polyline",
+                "params": {"points": points, "closed": False},
+                "expect": {"active_entity_delta": 1, "type": "Group", "edge_count": 2, "vertex_count": 3},
+                "unit": "mm",
+                "coordinate_space": "active_context",
+            },
+        )
+
+    async def test_create_rectangle_forwards_profile_and_area(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "create_rectangle",
+                    {"origin": [0.0, 0.0, 0.0], "width": 10.0, "height": 20.0,
+                     "normal": [0.0, 0.0, 1.0], "unit": "mm"},
+                )
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with(
+            "execute_geometry",
+            {
+                "action": "create_rectangle",
+                "params": {"origin": [0.0, 0.0, 0.0], "width": 10.0, "height": 20.0, "normal": [0.0, 0.0, 1.0]},
+                "expect": {"active_entity_delta": 1, "type": "Group", "edge_count": 4, "vertex_count": 4},
+                "unit": "mm",
+                "coordinate_space": "active_context",
+            },
+        )
+
+    async def test_create_circle_forwards_segments(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "create_circle",
+                    {"center": [0.0, 0.0, 0.0], "normal": [0.0, 0.0, 1.0], "radius": 5.0, "segments": 24, "unit": "mm"},
+                )
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with(
+            "execute_geometry",
+            {
+                "action": "create_circle",
+                "params": {"center": [0.0, 0.0, 0.0], "normal": [0.0, 0.0, 1.0], "radius": 5.0, "segments": 24},
+                "expect": {"active_entity_delta": 1, "type": "Group", "edge_count": 24},
+                "unit": "mm",
+                "coordinate_space": "active_context",
+            },
+        )
+
+    async def test_create_arc_forwards_angles(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "create_arc",
+                    {"center": [0.0, 0.0, 0.0], "normal": [0.0, 0.0, 1.0], "radius": 5.0,
+                     "start_degrees": 0.0, "end_degrees": 90.0, "segments": 12, "unit": "mm"},
+                )
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with(
+            "execute_geometry",
+            {
+                "action": "create_arc",
+                "params": {"center": [0.0, 0.0, 0.0], "normal": [0.0, 0.0, 1.0], "radius": 5.0,
+                           "start_degrees": 0.0, "end_degrees": 90.0, "segments": 12},
+                "expect": {"active_entity_delta": 1, "type": "Group", "edge_count": 12},
+                "unit": "mm",
+                "coordinate_space": "active_context",
+            },
+        )
+
+    async def test_create_polygon_forwards_sides_and_area(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "create_polygon",
+                    {"center": [0.0, 0.0, 0.0], "normal": [0.0, 0.0, 1.0], "radius": 10.0, "sides": 6, "unit": "mm"},
+                )
+        self.assertFalse(result.is_error)
+        payload = call.await_args.args[1]
+        self.assertEqual(payload["action"], "create_polygon")
+        self.assertEqual(payload["expect"]["active_entity_delta"], 1)
+        self.assertEqual(payload["expect"]["type"], "Group")
+        self.assertEqual(payload["expect"]["vertex_count"], 6)
+        self.assertEqual(payload["expect"]["edge_count"], 6)
+
+    async def test_sweep_profile_forwards_face_path_and_match_set(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
+        context = {"id": "a" * 64, "revision": "b" * 64}
+        matches = {"11": "c" * 64, "12": "d" * 64}
+        query_receipt = {
+            "context": context,
+            "entity_fingerprint": "c" * 64,
+            "result": {
+                "persistent_id": 11,
+                "type": "Face",
+                "hierarchy": {"edge_persistent_ids": [21, 22, 23, 24]},
+            },
+        }
+        call = AsyncMock(side_effect=[query_receipt, {"receipt_schema_version": 1, "committed": True}])
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "sweep_profile",
+                    {"face_pid": 11, "path_pids": [12], "unit": "mm",
+                     "if_context": context, "if_match": matches},
+                )
+        self.assertFalse(result.is_error)
+        self.assertEqual(call.await_count, 2)
+        strict = call.await_args_list[1].args
+        self.assertEqual(strict[0], "execute_geometry")
+        self.assertEqual(
+            strict[1],
+            {
+                "action": "sweep_profile",
+                "params": {"face_pid": 11, "path_pids": [12]},
+                "expect": {"active_entity_delta": -5, "type": "Group", "manifold": True},
+                "unit": "mm",
+                "coordinate_space": "active_context",
+                "if_context": context,
+                "if_match": matches,
+            },
+        )
+
+    async def test_measure_distance_forwards_pid_pair_and_unit(self) -> None:
+        call = AsyncMock(return_value={"center_distance": 250.0, "unit": "mm"})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "measure_distance", {"first_pid": 11, "second_pid": 12, "unit": "mm"}
+                )
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with(
+            "measure_distance", {"first_pid": 11, "second_pid": 12, "unit": "mm"}
+        )
+
+    async def test_query_topology_forwards_pid(self) -> None:
+        call = AsyncMock(return_value={"persistent_id": 11, "connected_persistent_ids": []})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool("query_topology", {"persistent_id": 11})
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with("query_topology", {"persistent_id": 11, "unit": "in"})
+
+    async def test_query_overlap_forwards_pid_pair(self) -> None:
+        call = AsyncMock(return_value={"overlap": False})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "query_overlap", {"first_pid": 11, "second_pid": 12, "unit": "mm"}
+                )
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with(
+            "query_overlap", {"first_pid": 11, "second_pid": 12, "unit": "mm"}
+        )
+
+    async def test_asset_list_forwards_registry_query(self) -> None:
+        call = AsyncMock(return_value={"assets": [], "asset_root": "assets"})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool("asset_list", {})
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with("asset_list", {"unit": "in"})
+
+    async def test_place_asset_forwards_key_matrix_and_name(self) -> None:
+        matrix = [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 10.0,20.0,30.0,1.0]
+        registry = {"assets": [{"asset_key": "farmhouse", "name": "farmhouse", "file": "farmhouse.skp"}]}
+        call = AsyncMock(side_effect=[registry, {"receipt_schema_version": 1, "committed": True}])
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "place_asset", {"asset_key": "farmhouse", "matrix": matrix, "unit": "mm"}
+                )
+        self.assertFalse(result.is_error)
+        self.assertEqual(call.await_count, 2)
+        strict = call.await_args_list[1].args
+        self.assertEqual(strict[0], "execute_geometry")
+        self.assertEqual(
+            strict[1],
+            {
+                "action": "place_asset",
+                "params": {"asset_key": "farmhouse", "matrix": matrix},
+                "expect": {
+                    "active_entity_delta": 1,
+                    "type": "ComponentInstance",
+                    "transformation": matrix,
+                },
+                "unit": "mm",
+                "coordinate_space": "active_context",
+            },
+        )
+
+    async def test_place_asset_fails_closed_for_unknown_key(self) -> None:
+        call = AsyncMock(return_value={"assets": []})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "place_asset", {"asset_key": "nope", "matrix": [1.0] * 16}
+                )
+        self.assertFalse(result.is_error)
+        payload = result.structured_content
+        self.assertEqual(payload.get("ok"), False)
+        self.assertEqual(payload["error"]["kind"], "asset_not_found")
+        call.assert_awaited_once_with("asset_list", {"unit": "in"})
+
+    async def test_texture_list_forwards_registry_query(self) -> None:
+        call = AsyncMock(return_value={"assets": [], "asset_root": "assets"})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool("texture_list", {})
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with("texture_list", {"unit": "in"})
+
+    async def test_material_apply_texture_forwards_dims_and_guards(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
+        context = {"id": "a" * 64, "revision": "b" * 64}
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "material_apply_texture",
+                    {"material": "Brick", "texture_key": "brick", "width": 1016.0,
+                     "height": 508.0, "unit": "mm", "if_context": context},
+                )
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with(
+            "execute_geometry",
+            {
+                "action": "material_apply_texture",
+                "params": {"material": "Brick", "texture_key": "brick", "width": 1016.0, "height": 508.0},
+                "expect": {"active_entity_delta": 0, "material": "Brick"},
+                "unit": "mm",
+                "coordinate_space": "active_context",
+                "if_context": context,
+            },
+        )
+
+    async def test_material_info_forwards_name_query(self) -> None:
+        call = AsyncMock(return_value={"material": "Brick"})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool("material_info", {"material": "Brick"})
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with("material_info", {"material": "Brick", "unit": "in"})
+
+    async def test_camera_get_forwards_unit_query(self) -> None:
+        call = AsyncMock(return_value={"eye": [0.0, 0.0, 100.0]})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool("camera_get", {"unit": "mm"})
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with("camera_get", {"unit": "mm"})
+
+    async def test_camera_set_forwards_absolute_camera(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
+        context = {"id": "a" * 64, "revision": "b" * 64}
+        fingerprint = "c" * 64
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "camera_set",
+                    {"eye": [0.0, 0.0, 100.0], "target": [0.0, 0.0, 0.0],
+                     "up": [0.0, 1.0, 0.0], "fov": 35.0, "unit": "mm",
+                     "if_context": context, "if_match": fingerprint},
+                )
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with(
+            "execute_geometry",
+            {
+                "action": "camera_set",
+                "params": {"eye": [0.0, 0.0, 100.0], "target": [0.0, 0.0, 0.0],
+                           "up": [0.0, 1.0, 0.0], "fov": 35.0},
+                "expect": {"active_entity_delta": 0, "camera_fov": 35.0},
+                "unit": "mm",
+                "coordinate_space": "active_context",
+                "if_context": context,
+                "if_match": fingerprint,
+            },
+        )
+
+    async def test_scene_list_forwards_query(self) -> None:
+        call = AsyncMock(return_value={"scenes": [], "scene_count": 0})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool("scene_list", {})
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with("scene_list", {"unit": "in"})
+
+    async def test_scene_create_forwards_name(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool("scene_create", {"name": "View A"})
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with(
+            "execute_geometry",
+            {
+                "action": "scene_create",
+                "params": {"name": "View A"},
+                "expect": {"active_entity_delta": 0, "scene_name": "View A"},
+                "unit": "in",
+                "coordinate_space": "active_context",
+            },
+        )
+
+    async def test_model_save_forwards_no_arg_call(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "saved": True})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool("model_save", {})
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with("model_save", {})
+
+    async def test_model_save_as_forwards_file_and_overwrite(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "saved": True})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "model_save_as", {"file": "test.skp", "overwrite": True}
+                )
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with("model_save_as", {"file": "test.skp", "overwrite": True})
+
+    async def test_model_open_forwards_file_and_model_guard(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "opened": True})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "model_open", {"file": "test.skp", "if_model_guid": "g" * 32}
+                )
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with("model_open", {"file": "test.skp", "if_model_guid": "g" * 32})
+
+    async def test_model_export_forwards_format(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "exported": True})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "model_export", {"file": "test.dae", "format": "dae", "overwrite": False}
+                )
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with(
+            "model_export", {"file": "test.dae", "format": "dae", "overwrite": False}
+        )
+
+    async def test_model_list_forwards_query(self) -> None:
+        call = AsyncMock(return_value={"models": [], "model_count": 0})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool("model_list", {})
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with("model_list", {})
+
+    async def test_integrity_report_forwards_query(self) -> None:
+        call = AsyncMock(return_value={"issue_count": 0})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool("integrity_report", {"unit": "mm"})
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with("integrity_report", {"unit": "mm"})
+
+    async def test_repair_reverse_face_queries_then_forwards(self) -> None:
+        context = {"id": "a" * 64, "revision": "b" * 64}
+        fingerprint = "c" * 64
+        query_receipt = {
+            "context": context,
+            "entity_fingerprint": fingerprint,
+            "result": {"persistent_id": 42, "type": "Face"},
+        }
+        call = AsyncMock(side_effect=[query_receipt, {"committed": True, "persistent_id": 42}])
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool("repair_reverse_face", {"persistent_id": 42})
+        self.assertFalse(result.is_error)
+        self.assertEqual(call.await_count, 2)
+        strict = call.await_args_list[1].args
+        self.assertEqual(strict[0], "execute_geometry")
+        self.assertEqual(strict[1]["action"], "repair_reverse_face")
+        self.assertEqual(strict[1]["params"], {"persistent_id": 42})
+        self.assertEqual(strict[1]["expect"], {"active_entity_delta": 0, "type": "Face"})
+        self.assertEqual(strict[1]["if_context"], context)
+        self.assertEqual(strict[1]["if_match"], fingerprint)
+
+    async def test_repair_erase_degenerate_queries_then_forwards(self) -> None:
+        context = {"id": "a" * 64, "revision": "b" * 64}
+        fingerprint = "c" * 64
+        query_receipt = {
+            "context": context,
+            "entity_fingerprint": fingerprint,
+            "result": {"persistent_id": 42, "type": "Edge"},
+        }
+        call = AsyncMock(side_effect=[query_receipt, {"committed": True, "persistent_id": 42}])
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool("repair_erase_degenerate", {"persistent_id": 42})
+        self.assertFalse(result.is_error)
+        strict = call.await_args_list[1].args
+        self.assertEqual(strict[1]["action"], "repair_erase_degenerate")
+        self.assertEqual(strict[1]["params"], {"persistent_id": 42})
+        self.assertEqual(strict[1]["expect"], {"active_entity_delta": -1, "deleted": True})
 
     async def test_legacy_create_group_uses_strict_group_engine(self) -> None:
         call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
