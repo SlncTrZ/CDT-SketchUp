@@ -206,6 +206,14 @@ module CDTSketchUp
       entity
     end
 
+    def require_raw_topology_entity(model, value)
+      entity = require_active_entity(model, value)
+      unless raw_topology_entity?(entity)
+        raise BridgeError.new("unsupported_object_type", "delete_topology_entity requires an Edge or Face")
+      end
+      entity
+    end
+
     def require_deletable_entity(model, value)
       entity = require_active_entity(model, value)
       unless entity.is_a?(Sketchup::Group) || entity.is_a?(Sketchup::ComponentInstance)

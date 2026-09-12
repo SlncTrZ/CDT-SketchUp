@@ -1,6 +1,6 @@
 # CDT-SketchUp Tool Guide
 
-> Status: contract 0.22 · measured native baseline on SketchUp 2024 · Updated: 2026-09-12
+> Status: contract 0.23 · measured native baseline on SketchUp 2024 · Updated: 2026-09-12
 
 ## Runtime model
 
@@ -139,6 +139,7 @@ Current action allowlist:
 - `transform_entity`
 - `boolean_operation`
 - `delete_entity`
+- `delete_topology_entity`
 - `group_entities`
 - `create_component`
 - `place_instance`
@@ -155,7 +156,7 @@ Current action allowlist:
 
 The action, semantic extraction and validation all happen before commit. A successful step requires SketchUp to return a successful `commit_operation`; the response reports `commit_verified=true`.
 
-Every strict request must provide `expect.active_entity_delta` and at least one additional entity semantic check. Validation supports:
+Strict requests normally provide `expect.active_entity_delta` plus at least one additional entity semantic check. `delete_topology_entity` is the deliberate exception: raw SketchUp topology can cascade, so it requires `expect.deleted=true` and verifies the exact affected set against the pre-mutation topology closure instead of asking the caller to guess an entity delta. Validation supports:
 
 - exact entity type;
 - bounding-box min/max/size with tolerance;
@@ -185,7 +186,7 @@ Strict generic CAD boolean for `union`, `difference`, or `intersect`. Both opera
 
 Strict generic object delete for one unlocked active-context `Group` or `ComponentInstance`. The wrapper routes through `execute_geometry` with exact `active_entity_delta=-1` and `deleted=true` expectations.
 
-Before opening `AI_Step`, the native bridge validates the closed PID-only parameter schema, resolves the target, checks active edit context, supported object type and lock state. Unsupported raw `Edge`/`Face` targets fail before mutation because deleting raw SketchUp geometry can cascade through connected topology.
+Before opening `AI_Step`, the native bridge validates the closed PID-only parameter schema, resolves the target, checks active edit context, supported object type and lock state. Raw `Edge`/`Face` targets remain intentionally excluded from this object-delete contract; they use the separate topology-aware action below.
 
 A committed result returns a tombstone semantic state with the original PID/type and `deleted=true`; the PID must no longer resolve before commit. Contract `0.10` retains a deliberately narrow affected-entity receipt for this action:
 
@@ -200,6 +201,14 @@ A committed result returns a tombstone semantic state with the original PID/type
 ```
 
 If post-delete semantic validation fails, SketchUp aborts the operation. A verified rollback returns empty affected sets and the original target must be restored by exact model/entity fingerprints. PID values that the native SketchUp lookup cannot represent are normalized to `invalid_argument`; an in-range PID that does not exist returns `object_not_found`.
+
+### `delete_topology_entity(persistent_id, topology_closure_fingerprint)`
+
+Closed `execute_geometry` action for one active-context raw `Edge` or `Face`. The caller first obtains `topology_closure_fingerprint` from `query_topology`, then submits that fingerprint with the target PID and `expect={deleted:true}` (optional `type=Edge|Face`). `active_entity_delta` is intentionally not accepted for this action because native edge deletion can invalidate adjacent faces.
+
+Preflight incrementally computes the bounded raw topology closure and rejects a stale fingerprint before `AI_Step`. Inside the transaction the bridge recomputes and rechecks the same closure immediately before `erase_entities`, preventing a topology race between preflight and mutation. After deletion, strict affected-set validation requires: no created PIDs, the target PID is deleted, and every modified/deleted PID is contained in the exact pre-mutation closure. Any collateral effect outside that closure aborts the transaction and goes through verified rollback.
+
+Contract `0.23` implementation is automated-regression verified; native SketchUp 2024 acceptance remains pending and is not inferred from the older object-delete evidence.
 
 ### `group_entities(persistent_ids, name?)`
 
@@ -333,7 +342,7 @@ Strict Follow-Me sweep of one profile face along an exact connected edge path (1
 
 Measured native rules worth knowing: `followme` returns only success/failure, so the resulting shell is discovered by snapshot diff and grouped in the same transaction; `add_group` rebases members into group-local coordinates, so positional checks map through the group transform.
 
-Non-isolated push/pull extrusion beyond the isolated-face special case is deliberately deferred: extruding a connected face distorts neighboring topology, which needs the topology-aware contract already deferred for raw Edge/Face deletion.
+Non-isolated push/pull extrusion beyond the isolated-face special case remains deferred. The bounded topology closure foundation now exists and is used by raw topology deletion, but connected push/pull can create/split/reparent geometry rather than only delete within a known closure, so it still needs its own affected-topology contract and native acceptance.
 
 ### `copy_entity(persistent_id)`
 
@@ -459,6 +468,7 @@ The provider never returns fake success for a failed live action. Representative
 - `semantic_state_too_large`
 - `topology_closure_too_large`
 - `topology_unresolvable`
+- `stale_topology_state`
 - `geometry_execution_failed`
 - `non_isolated_face`
 - `context_mismatch`
@@ -503,4 +513,4 @@ The provider never returns fake success for a failed live action. Representative
 
 ## Acceptance status
 
-Measured native acceptance on SketchUp 2024 `24.0.594` / Ruby `3.2.2` covers the live bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, Group/ComponentInstance delete, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control, rooted document lifecycle and CAD integrity with safe repair, including negative/rollback cases. The current provider exposes **64 tools** at contract **`0.22`**. Contract 0.22 is a safety-honesty correction: document I/O is now classified as non-transactional `external_side_effect`, public native exception leakage is removed, rooted model/asset/texture paths use canonical containment, and `model_open` refuses unsaved active models. The underlying SketchUp 2024 native behavior was previously live-accepted at contract 0.21; the 0.22 correction is covered by the automated regression suite and should receive the next native smoke before extending runtime claims. See [Compatibility](COMPATIBILITY.md) for the supported-runtime claim.
+Measured native acceptance on SketchUp 2024 `24.0.594` / Ruby `3.2.2` covers the live bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, Group/ComponentInstance delete, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control, rooted document lifecycle and CAD integrity with safe repair, including negative/rollback cases. The current provider exposes **64 MCP tools** at contract **`0.23`**. Contract 0.22 corrected safety honesty for document side effects and rooted paths; contract 0.23 adds bounded topology closure/fingerprinting and topology-aware raw Edge/Face delete under the existing `execute_geometry` tool. The underlying SketchUp 2024 native behavior was previously live-accepted at contract 0.21; the 0.22/0.23 changes are automated-regression verified and still require native smoke before extending measured claims. See [Compatibility](COMPATIBILITY.md) for the supported-runtime claim.

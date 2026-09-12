@@ -358,6 +358,22 @@ class SemanticBridgeTests(unittest.TestCase):
         self.assertLess(isolation_index, pushpull_index)
         self.assertIn('"non_isolated_face"', source)
 
+    def test_raw_topology_delete_is_closed_guarded_and_affected_bounded(self) -> None:
+        source = read_extension_sources()
+        self.assertIn('"delete_topology_entity" => :execute_delete_topology_entity', source)
+        self.assertIn("DELETE_TOPOLOGY_PARAM_KEYS = %w[persistent_id topology_closure_fingerprint].freeze", source)
+        self.assertIn('preflight_delete_topology_entity(model, action_params) if action == "delete_topology_entity"', source)
+        self.assertIn("require_raw_topology_entity", source)
+        self.assertIn('"stale_topology_state"', source)
+        self.assertIn("raw_topology_closure_fingerprint", source)
+        self.assertIn("model.active_entities.erase_entities(entity)", source)
+        self.assertIn('"action.topology_target_consumed"', source)
+        self.assertIn('"affected.topology_no_created"', source)
+        self.assertIn('"affected.topology_within_closure"', source)
+        self.assertIn('"affected.topology_target_deleted"', source)
+        self.assertIn('action != "delete_topology_entity"', source)
+        self.assertIn('"delete_topology_entity requires expect.deleted = true"', source)
+
     def test_group_entities_is_strict_closed_and_preflighted_before_transaction(self) -> None:
         source = read_extension_sources()
         self.assertIn('"group_entities" => :execute_group_entities', source)
@@ -496,7 +512,7 @@ class SemanticBridgeTests(unittest.TestCase):
         self.assertIn("validate_component_if_match_set", source)
         self.assertIn('"if_match for create_component must be an object keyed by persistent ID"', source)
         self.assertIn('"if_match for place_instance must be a 64-character lowercase SHA-256 hex string"', source)
-        self.assertIn('when "transform_entity", "delete_entity", "extrude_face_to_group", "make_unique"', source)
+        self.assertIn('when "transform_entity", "delete_entity", "delete_topology_entity", "extrude_face_to_group", "make_unique"', source)
 
     def test_copy_and_array_actions_are_strict_closed_and_preflighted(self) -> None:
         source = read_extension_sources()
@@ -540,7 +556,7 @@ class SemanticBridgeTests(unittest.TestCase):
 
     def test_copy_and_array_share_single_pid_precondition(self) -> None:
         source = read_extension_sources()
-        self.assertIn('when "transform_entity", "delete_entity", "extrude_face_to_group", "make_unique", "copy_entity", "linear_array", "radial_array"', source)
+        self.assertIn('when "transform_entity", "delete_entity", "delete_topology_entity", "extrude_face_to_group", "make_unique", "copy_entity", "linear_array", "radial_array"', source)
 
     def test_tag_and_material_assign_are_strict_closed_actions(self) -> None:
         source = read_extension_sources()

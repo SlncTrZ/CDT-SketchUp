@@ -87,7 +87,7 @@ module CDTSketchUp
 
     def precondition_target_pid(action, action_params)
       case action
-      when "transform_entity", "delete_entity", "extrude_face_to_group", "make_unique", "copy_entity", "linear_array", "radial_array", "tag_assign", "material_assign", "repair_reverse_face", "repair_erase_degenerate"
+      when "transform_entity", "delete_entity", "delete_topology_entity", "extrude_face_to_group", "make_unique", "copy_entity", "linear_array", "radial_array", "tag_assign", "material_assign", "repair_reverse_face", "repair_erase_degenerate"
         action_params["persistent_id"]
       when "boolean_operation"
         action_params["target_pid"]

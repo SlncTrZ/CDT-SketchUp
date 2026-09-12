@@ -197,7 +197,10 @@ module CDTSketchUp
         unless action_handler
           raise BridgeError.new("unsupported_geometry_action", "Geometry action is not supported")
         end
-        validate_semantic_expectation_schema(expect)
+        validate_semantic_expectation_schema(
+          expect,
+          require_active_entity_delta: action != "delete_topology_entity"
+        )
         validate_action_expectation(action, action_params, expect)
 
         outcome = send(action_handler, model, action_params)
@@ -207,7 +210,8 @@ module CDTSketchUp
           state,
           expect,
           before_count: before_count,
-          after_count: after_count
+          after_count: after_count,
+          check_active_entity_delta: action != "delete_topology_entity"
         )
         action_checks = validate_action_semantic_invariants(
           action,

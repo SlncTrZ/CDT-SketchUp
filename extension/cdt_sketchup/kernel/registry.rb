@@ -44,6 +44,7 @@ module CDTSketchUp
       "transform_entity" => :execute_transform_entity,
       "boolean_operation" => :execute_boolean_operation,
       "delete_entity" => :execute_delete_entity,
+      "delete_topology_entity" => :execute_delete_topology_entity,
       "group_entities" => :execute_group_entities,
       "create_component" => :execute_create_component,
       "copy_entity" => :execute_copy_entity,
@@ -100,6 +101,7 @@ module CDTSketchUp
     TRANSFORM_ENTITY_PARAM_KEYS = %w[persistent_id matrix].freeze
     BOOLEAN_OPERATION_PARAM_KEYS = %w[tool_pid target_pid operation_type].freeze
     DELETE_ENTITY_PARAM_KEYS = %w[persistent_id].freeze
+    DELETE_TOPOLOGY_PARAM_KEYS = %w[persistent_id topology_closure_fingerprint].freeze
     GROUP_ENTITIES_PARAM_KEYS = %w[persistent_ids name].freeze
     CREATE_COMPONENT_PARAM_KEYS = %w[persistent_ids name].freeze
     COPY_ENTITY_PARAM_KEYS = %w[persistent_id].freeze

@@ -36,7 +36,7 @@ The machine-readable capability registry prevents clients from having to guess w
 
 Strict operation receipts include an `affected_verified` flag. Successful strict commits set it only after bounded semantic snapshot comparison; rollback receipts set it only when the abort result and exact before/after-rollback model fingerprints prove restoration. A reparented PID that still resolves is classified as modified, not deleted.
 
-Strict object delete is intentionally limited to unlocked active-context Groups and ComponentInstances. Raw Edge/Face deletion is rejected before the transaction because native SketchUp topology deletion can cascade into connected geometry and needs a topology-aware affected-entity contract.
+Strict object delete remains limited to unlocked active-context Groups and ComponentInstances. Raw Edge/Face deletion uses a separate topology-aware contract: an incremental bounded closure is fingerprinted before mutation, rechecked immediately before native erase, and every modified/deleted PID must remain inside that exact closure before commit. Stale closure fingerprints fail before mutation; collateral effects outside the closure force transaction abort. Contract 0.23 implementation is regression-verified but still pending native SketchUp acceptance.
 
 ## Current bounded-work controls
 

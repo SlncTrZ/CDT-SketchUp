@@ -544,6 +544,7 @@ module CDTSketchUp
 
     def preflight_geometry_action(model, action, action_params)
       preflight_delete_entity(model, action_params) if action == "delete_entity"
+      preflight_delete_topology_entity(model, action_params) if action == "delete_topology_entity"
       preflight_group_entities(model, action_params) if action == "group_entities"
       preflight_create_component(model, action_params) if action == "create_component"
       preflight_copy_entity(model, action_params) if action == "copy_entity"
@@ -587,6 +588,44 @@ module CDTSketchUp
       end
       unless params.key?("persistent_id")
         raise BridgeError.new("invalid_argument", "delete_entity persistent_id is required")
+      end
+      true
+    end
+
+    def validate_delete_topology_params(params)
+      unless params.is_a?(Hash)
+        raise BridgeError.new("invalid_argument", "delete_topology_entity params must be an object")
+      end
+      unknown_keys = params.keys - DELETE_TOPOLOGY_PARAM_KEYS
+      unless unknown_keys.empty?
+        raise BridgeError.new(
+          "invalid_argument",
+          "delete_topology_entity params contain unsupported keys: #{unknown_keys.sort.join(', ')}"
+        )
+      end
+      persistent_id = bounded_integer(
+        params["persistent_id"],
+        minimum: 1,
+        maximum: (2**63) - 1,
+        name: "persistent_id"
+      )
+      fingerprint = params["topology_closure_fingerprint"]
+      unless fingerprint.is_a?(String) && fingerprint.match?(/\A[a-f0-9]{64}\z/)
+        raise BridgeError.new(
+          "invalid_argument",
+          "topology_closure_fingerprint must be a 64-character lowercase SHA-256 hex string"
+        )
+      end
+      [persistent_id, fingerprint]
+    end
+
+    def preflight_delete_topology_entity(model, params)
+      persistent_id, expected_fingerprint = validate_delete_topology_params(params)
+      entity = require_raw_topology_entity(model, persistent_id)
+      closure = bounded_raw_topology_closure(entity)
+      actual_fingerprint = raw_topology_closure_fingerprint(model, closure)
+      unless actual_fingerprint == expected_fingerprint
+        raise BridgeError.new("stale_topology_state", "Raw topology changed since the closure query")
       end
       true
     end
@@ -701,6 +740,44 @@ module CDTSketchUp
           "target_persistent_id" => persistent_id,
           "target_type" => before_state["type"],
           "before_state" => before_state
+        }
+      }
+    end
+
+    def execute_delete_topology_entity(model, params)
+      persistent_id, expected_fingerprint = validate_delete_topology_params(params)
+      entity = require_raw_topology_entity(model, persistent_id)
+      before_state = semantic_entity_state(model, entity)
+      closure = bounded_raw_topology_closure(entity)
+      closure_ids = closure.map(&:persistent_id).sort
+      actual_fingerprint = raw_topology_closure_fingerprint(model, closure)
+      unless actual_fingerprint == expected_fingerprint
+        raise BridgeError.new("stale_topology_state", "Raw topology changed before deletion")
+      end
+
+      begin
+        model.active_entities.erase_entities(entity)
+      rescue ArgumentError, RuntimeError => error
+        log("delete topology entity failed: #{error.class}: #{error.message}")
+        raise BridgeError.new("delete_failed", "SketchUp did not delete the topology target")
+      end
+      if entity_alive_by_pid?(model, persistent_id)
+        raise BridgeError.new("delete_failed", "Deleted topology target persistent ID still resolves")
+      end
+
+      {
+        "state" => {
+          "persistent_id" => persistent_id,
+          "type" => before_state["type"],
+          "valid" => false,
+          "active_context" => false,
+          "deleted" => true
+        },
+        "metadata" => {
+          "target_persistent_id" => persistent_id,
+          "target_type" => before_state["type"],
+          "topology_closure_persistent_ids" => closure_ids,
+          "topology_closure_fingerprint" => actual_fingerprint
         }
       }
     end

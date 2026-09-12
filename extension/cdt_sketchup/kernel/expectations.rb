@@ -95,6 +95,26 @@ module CDTSketchUp
             "delete_entity expect.type must be Group or ComponentInstance"
           )
         end
+      when "delete_topology_entity"
+        unless expect["deleted"] == true
+          raise BridgeError.new(
+            "invalid_argument",
+            "delete_topology_entity requires expect.deleted = true"
+          )
+        end
+        unsupported_topology_delete_expect = expect.keys - %w[deleted type tolerance]
+        unless unsupported_topology_delete_expect.empty?
+          raise BridgeError.new(
+            "invalid_argument",
+            "delete_topology_entity expect contains unsupported keys: #{unsupported_topology_delete_expect.sort.join(', ')}"
+          )
+        end
+        if expect.key?("type") && !%w[Edge Face].include?(expect["type"].to_s)
+          raise BridgeError.new(
+            "invalid_argument",
+            "delete_topology_entity expect.type must be Edge or Face"
+          )
+        end
       when "group_entities"
         persistent_ids, = validate_group_entities_params(action_params)
         unless Integer(expect["active_entity_delta"]) == 1 - persistent_ids.length
@@ -672,6 +692,14 @@ module CDTSketchUp
           ),
           semantic_check("action.type", metadata["target_type"], state["type"])
         ]
+      when "delete_topology_entity"
+        target_alive = entity_alive_by_pid?(Sketchup.active_model, metadata["target_persistent_id"])
+        return [
+          semantic_check("action.topology_target_consumed", false, target_alive),
+          semantic_check("action.deleted", true, state["deleted"]),
+          semantic_check("action.persistent_id", metadata["target_persistent_id"], state["persistent_id"]),
+          semantic_check("action.type", metadata["target_type"], state["type"])
+        ]
       when "group_entities"
         model = Sketchup.active_model
         input_ids = metadata["input_persistent_ids"] || []
@@ -1199,6 +1227,19 @@ module CDTSketchUp
 
     def validate_action_affected_invariants(action, state, metadata, affected)
       case action
+      when "delete_topology_entity"
+        closure_ids = (metadata["topology_closure_persistent_ids"] || []).sort
+        touched_ids = (affected["modified"] + affected["deleted"]).uniq.sort
+        within_closure = (touched_ids - closure_ids).empty?
+        return [
+          semantic_check("affected.topology_no_created", [], affected["created"]),
+          semantic_check("affected.topology_within_closure", true, within_closure),
+          semantic_check(
+            "affected.topology_target_deleted",
+            true,
+            affected["deleted"].include?(metadata["target_persistent_id"])
+          )
+        ]
       when "group_entities", "create_component"
         input_ids = (metadata["input_persistent_ids"] || []).sort
         return [
@@ -1279,7 +1320,7 @@ module CDTSketchUp
       []
     end
 
-    def validate_semantic_expectation_schema(expect)
+    def validate_semantic_expectation_schema(expect, require_active_entity_delta: true)
       unknown_expect_keys = expect.keys - SEMANTIC_EXPECT_KEYS
       unless unknown_expect_keys.empty?
         raise BridgeError.new(
@@ -1288,7 +1329,7 @@ module CDTSketchUp
         )
       end
 
-      unless expect.key?("active_entity_delta")
+      if require_active_entity_delta && !expect.key?("active_entity_delta")
         raise BridgeError.new(
           "invalid_argument",
           "expect.active_entity_delta is required"
@@ -1305,7 +1346,13 @@ module CDTSketchUp
       true
     end
 
-    def validate_semantic_expectation(state, expect, before_count:, after_count:)
+    def validate_semantic_expectation(
+      state,
+      expect,
+      before_count:,
+      after_count:,
+      check_active_entity_delta: true
+    )
       tolerance = expect.key?("tolerance") ? finite_number(expect["tolerance"], "expect.tolerance") : 1e-6
       if tolerance.negative?
         raise BridgeError.new("invalid_argument", "expect.tolerance must be non-negative")
@@ -1314,11 +1361,13 @@ module CDTSketchUp
       volume_tolerance = [tolerance * tolerance * tolerance, SEMANTIC_QUANTUM].max
       checks = []
 
-      checks << semantic_check(
-        "active_entity_delta",
-        Integer(expect["active_entity_delta"]),
-        after_count - before_count
-      )
+      if check_active_entity_delta
+        checks << semantic_check(
+          "active_entity_delta",
+          Integer(expect["active_entity_delta"]),
+          after_count - before_count
+        )
+      end
 
       if expect.key?("deleted")
         unless expect["deleted"] == true || expect["deleted"] == false
