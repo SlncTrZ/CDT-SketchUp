@@ -59,7 +59,7 @@ Receipt context identity is live: a process/model/edit-path context ID is paired
 
 ## SketchUp extension
 
-The Ruby extension runs inside SketchUp and owns native model access. Its bridge binds to loopback and executes SketchUp Ruby API work from SketchUp's main thread.
+The Ruby extension runs inside SketchUp and owns native model access. Its bridge binds to loopback and executes SketchUp Ruby API work from SketchUp's main thread. The extension entry point (`extension/cdt_sketchup/main.rb`) is intentionally thin: it only requires the module tree and starts the bridge. Implementation lives in `bridge/` (loopback server, protocol, auth), `kernel/` (errors, limits, primitives, units, registry, transaction, context, entity resolution, semantic state, fingerprints, expectations, receipts) and per-family `actions/` (strict mutations) plus `queries/` (read paths). Dependency direction is one-way — actions/queries call into kernel, never the reverse — and is machine-checked by the offline suite.
 
 For strict autonomous mutations, the extension uses the **Semantic State Loop**:
 

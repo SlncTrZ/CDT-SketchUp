@@ -30,3 +30,9 @@ The measured live acceptance was performed on Windows. Other desktop platforms r
 
 
 Context/stale-write acceptance on SketchUp 2024 proves a real `active_path` switch causes an old guarded write to fail as `context_mismatch` with no semantic mutation; an entity changed after query causes stale `if_match` deletion to fail as `stale_entity_state`; unchanged fresh context/fingerprint permits the guarded write and advances revision. The same three cases were independently verified through the public Streamable HTTP MCP surface.
+
+## Measured performance and bounds
+
+Loopback read paths sit at a ~62 ms p50 floor (dominated by the bridge poll interval); `get_entity_state` measured 124–189 ms p50 and strict create 211–373 ms p50 as the active context grows from 1 to ~120 entities on the measured runtime. Bounded work fails closed rather than degrading: a strict-create overload probe refused the next operation at exactly **499 boxes** against the `MAX_OBJECTS=500` fingerprint budget. These are single-runtime measurements on one machine, not guarantees; re-measure on new hardware or SketchUp versions before advertising budgets.
+
+A three-domain composition benchmark (architecture-style boolean opening, structure-style column array, interior-style tag/material/camera/scene) completed using only generic primitives with the provider tool set unchanged, confirming that external Domain Agents can compose workflows without provider modifications.

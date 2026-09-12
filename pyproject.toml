@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 cdt-sketchup = "cdt_sketchup.server:main"
+cdt-sketchup-doctor = "cdt_sketchup.doctor:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

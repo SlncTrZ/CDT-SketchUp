@@ -14,7 +14,11 @@ DEFAULT_OUTPUT = ROOT / "dist" / "cdt-sketchup-bridge-0.1.0.rbz"
 
 
 def build(output: Path) -> Path:
-    """Create an RBZ archive containing only the extension loader and package tree."""
+    """Create a byte-reproducible RBZ archive of the extension tree.
+
+    ZIP entry timestamps and permissions are fixed so identical sources
+    always produce an identical archive checksum.
+    """
     sources = sorted(path for path in EXTENSION_ROOT.rglob("*") if path.is_file())
     if not sources:
         raise RuntimeError("extension source is empty")
@@ -22,7 +26,13 @@ def build(output: Path) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for source in sources:
-            archive.write(source, source.relative_to(EXTENSION_ROOT).as_posix())
+            info = zipfile.ZipInfo(
+                source.relative_to(EXTENSION_ROOT).as_posix(),
+                date_time=(1980, 1, 1, 0, 0, 0),
+            )
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            archive.writestr(info, source.read_bytes())
     return output
 
 

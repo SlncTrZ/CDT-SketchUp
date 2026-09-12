@@ -229,9 +229,11 @@ Offline tests:
 python -m unittest discover -s tests -v
 ```
 
-The current public tree automated suite is **169/169 PASS**.
+The current public tree automated suite is **195/195 PASS**.
 
 Native acceptance has been measured on SketchUp 2024 for the baseline bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, object delete, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control, rooted document lifecycle and CAD integrity with safe repair, including negative/rollback cases. The public HTTP MCP surface was also live-smoked at contract `0.21` with 64 tools, face-reversal repair plus integrity facts, and capability metadata schema v2 covering all 64 discovered tools on the active SketchUp model. Receipt v1 was additionally live-accepted across all twenty-seven strict actions plus read-only queries and through the public MCP operation/query paths.
+
+`cdt-sketchup-doctor` provides offline and live health checks (`doctor`, `doctor --live`), extension install/uninstall, token repair, and a sanitized `support-bundle` that never includes credential material. The RBZ build is byte-reproducible (fixed archive metadata).
 
 ## Public documentation
 

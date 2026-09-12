@@ -1,0 +1,25 @@
+# cdt_sketchup/kernel/limits.rb — shared numeric and registry limits
+# Wing: code | Topic: sketchup_bridge | Updated: 2026-09-12
+
+module CDTSketchUp
+  class BridgeServer
+    private
+
+  MAX_OBJECTS = 500
+  MAX_FACE_POINTS = 512
+  MAX_ARRAY_COPIES = 100
+  MAX_ARRAY_PROJECTED_ENTITIES = 5000
+  MAX_CURVE_SEGMENTS = 360
+  MAX_POLYLINE_POINTS = 512
+  MAX_SWEEP_PATH_EDGES = 64
+  MAX_TOPOLOGY_RESULTS = 500
+  MAX_ASSET_BYTES = 67108864
+  MAX_TEXTURE_BYTES = 16777216
+  MAX_INTEGRITY_SCAN = 5000
+  MODEL_FILES_ROOTNAME = "models".freeze
+  DEBUG_MODE = false
+    SEMANTIC_QUANTUM = 1e-6
+    MAX_FINGERPRINT_EDGES = 20_000
+    MAX_MODEL_FINGERPRINT_ENTITIES = MAX_OBJECTS
+  end
+end
