@@ -893,6 +893,9 @@ module CDTSketchUp
                  else
                    state["geometry_fingerprint"] == metadata["source_geometry_fingerprint"]
                  end
+        copy_entity = model.find_entity_by_persistent_id(state["persistent_id"])
+        properties_preserved = copy_entity &&
+                               copyable_instance_properties(copy_entity) == metadata["source_instance_properties"]
         return [
           semantic_check(
             "action.copy_is_new",
@@ -905,7 +908,8 @@ module CDTSketchUp
             metadata["source_transformation"],
             state["transformation"]
           ),
-          semantic_check("action.copy_shares_source", true, shares)
+          semantic_check("action.copy_shares_source", true, shares),
+          semantic_check("action.copy_properties_preserved", true, properties_preserved)
         ]
       when "linear_array", "radial_array"
         model = Sketchup.active_model
@@ -926,11 +930,15 @@ module CDTSketchUp
             current["geometry_fingerprint"] == metadata["source_geometry_fingerprint"]
           end
         end
+        properties_ok = copies_alive && copies.all? do |entity|
+          copyable_instance_properties(entity) == metadata["source_instance_properties"]
+        end
         return [
           semantic_check("action.array_count_exact", metadata["count"], copy_ids.length),
           semantic_check("action.copies_alive", true, copies_alive),
           semantic_check("action.array_transforms_exact", true, transforms_ok),
           semantic_check("action.array_shares_source", true, shares_ok),
+          semantic_check("action.array_properties_preserved", true, properties_ok),
           semantic_check(
             "action.result_is_new",
             true,

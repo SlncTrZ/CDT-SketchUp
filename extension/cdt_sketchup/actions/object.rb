@@ -319,35 +319,65 @@ module CDTSketchUp
       true
     end
 
-    def duplicate_object_for_copy(model, entity)
-      if entity.is_a?(Sketchup::Group)
-        copy = begin
-          entity.copy
-        rescue StandardError => error
-          log("copy entity failed: #{error.class}: #{error.message}")
-          raise BridgeError.new("copy_failed", "SketchUp did not copy the group")
-        end
-        unless copy && copy.valid? && copy.is_a?(Sketchup::Group)
-          raise BridgeError.new("copy_failed", "SketchUp did not produce a group copy")
-        end
-        copy
-      elsif entity.is_a?(Sketchup::ComponentInstance)
-        copy = begin
-          model.active_entities.add_instance(entity.definition, entity.transformation)
-        rescue ArgumentError, RuntimeError => error
-          log("copy entity failed: #{error.class}: #{error.message}")
-          raise BridgeError.new("copy_failed", "SketchUp did not copy the instance")
-        end
-        unless copy && copy.valid? && copy.is_a?(Sketchup::ComponentInstance)
-          raise BridgeError.new("copy_failed", "SketchUp did not produce an instance copy")
-        end
-        copy
-      else
-        raise BridgeError.new(
-          "unsupported_object_type",
-          "copy_entity requires a group/component instance"
-        )
+    def copyable_instance_properties(entity)
+      {
+        "name" => entity.respond_to?(:name) ? entity.name.to_s : nil,
+        "hidden" => entity.respond_to?(:hidden?) ? entity.hidden? : nil,
+        "tag" => if entity.respond_to?(:layer) && entity.layer
+                   entity.layer.name.to_s
+                 end,
+        "material" => if entity.respond_to?(:material) && entity.material
+                        entity.material.name.to_s
+                      end,
+        "casts_shadows" => entity.respond_to?(:casts_shadows?) ? entity.casts_shadows? : nil,
+        "receives_shadows" => entity.respond_to?(:receives_shadows?) ? entity.receives_shadows? : nil
+      }
+    end
+
+    def apply_copyable_instance_properties(source, copy)
+      copy.material = source.material if copy.respond_to?(:material=) && source.respond_to?(:material)
+      copy.layer = source.layer if copy.respond_to?(:layer=) && source.respond_to?(:layer)
+      copy.name = source.name.to_s if copy.respond_to?(:name=) && source.respond_to?(:name)
+      copy.hidden = source.hidden? if copy.respond_to?(:hidden=) && source.respond_to?(:hidden?)
+      if copy.respond_to?(:casts_shadows=) && source.respond_to?(:casts_shadows?)
+        copy.casts_shadows = source.casts_shadows?
       end
+      if copy.respond_to?(:receives_shadows=) && source.respond_to?(:receives_shadows?)
+        copy.receives_shadows = source.receives_shadows?
+      end
+      copy
+    rescue StandardError => error
+      log("copy property propagation failed: #{error.class}: #{error.message}")
+      raise BridgeError.new("copy_failed", "SketchUp did not preserve copy properties")
+    end
+
+    def duplicate_object_for_copy(model, entity)
+      copy = if entity.is_a?(Sketchup::Group)
+               begin
+                 entity.copy
+               rescue StandardError => error
+                 log("copy entity failed: #{error.class}: #{error.message}")
+                 raise BridgeError.new("copy_failed", "SketchUp did not copy the group")
+               end
+             elsif entity.is_a?(Sketchup::ComponentInstance)
+               begin
+                 model.active_entities.add_instance(entity.definition, entity.transformation)
+               rescue ArgumentError, RuntimeError => error
+                 log("copy entity failed: #{error.class}: #{error.message}")
+                 raise BridgeError.new("copy_failed", "SketchUp did not copy the instance")
+               end
+             else
+               raise BridgeError.new(
+                 "unsupported_object_type",
+                 "copy_entity requires a group/component instance"
+               )
+             end
+
+      expected_type = entity.is_a?(Sketchup::Group) ? Sketchup::Group : Sketchup::ComponentInstance
+      unless copy && copy.valid? && copy.is_a?(expected_type)
+        raise BridgeError.new("copy_failed", "SketchUp did not produce a compatible copy")
+      end
+      apply_copyable_instance_properties(entity, copy)
     end
 
     def duplicate_and_place(model, source, transform)
@@ -372,7 +402,8 @@ module CDTSketchUp
           "source_persistent_id" => persistent_id,
           "source_transformation" => source_state["transformation"],
           "source_definition_guid" => source_state.dig("definition", "guid"),
-          "source_geometry_fingerprint" => source_state["geometry_fingerprint"]
+          "source_geometry_fingerprint" => source_state["geometry_fingerprint"],
+          "source_instance_properties" => copyable_instance_properties(source)
         }
       }
     end
@@ -418,7 +449,8 @@ module CDTSketchUp
           "copy_persistent_ids" => copies.map(&:persistent_id),
           "requested_transformations" => requested,
           "source_definition_guid" => source_state.dig("definition", "guid"),
-          "source_geometry_fingerprint" => source_state["geometry_fingerprint"]
+          "source_geometry_fingerprint" => source_state["geometry_fingerprint"],
+          "source_instance_properties" => copyable_instance_properties(source)
         }
       }
     end

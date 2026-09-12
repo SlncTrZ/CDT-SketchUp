@@ -554,6 +554,20 @@ class SemanticBridgeTests(unittest.TestCase):
         self.assertIn('"action.copy_is_new"', source)
         self.assertIn('"action.copy_shares_source"', source)
 
+    def test_copy_and_array_preserve_generic_instance_properties(self) -> None:
+        source = read_extension_sources()
+        self.assertIn("def copyable_instance_properties", source)
+        self.assertIn("def apply_copyable_instance_properties", source)
+        self.assertIn("copy.material = source.material", source)
+        self.assertIn("copy.layer = source.layer", source)
+        self.assertIn("copy.name = source.name.to_s", source)
+        self.assertIn("copy.hidden = source.hidden?", source)
+        self.assertIn("copy.casts_shadows = source.casts_shadows?", source)
+        self.assertIn("copy.receives_shadows = source.receives_shadows?", source)
+        self.assertIn('"source_instance_properties"', source)
+        self.assertIn('"action.copy_properties_preserved"', source)
+        self.assertIn('"action.array_properties_preserved"', source)
+
     def test_array_bounds_count_and_projected_complexity(self) -> None:
         source = read_extension_sources()
         self.assertIn("MAX_ARRAY_COPIES = 100", source)
