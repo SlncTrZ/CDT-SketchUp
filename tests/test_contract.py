@@ -31,7 +31,7 @@ class ContractTests(unittest.TestCase):
     def test_provider_identity_is_stable(self) -> None:
         self.assertEqual(PROVIDER_ID, "cdt_sketchup")
         self.assertEqual(PROVIDER_VERSION, "0.1.0")
-        self.assertEqual(CONTRACT_VERSION, "0.25")
+        self.assertEqual(CONTRACT_VERSION, "0.28")
         self.assertEqual(COMMON_CONTRACT_VERSION, "0.1")
         self.assertEqual(SKETCHUP_EXTENSION_VERSION, "0.1")
 
@@ -70,6 +70,7 @@ class ContractTests(unittest.TestCase):
                 "create_circle",
                 "create_arc",
                 "create_polygon",
+                "create_mesh",
                 "sweep_profile",
                 "measure_distance",
                 "query_topology",
@@ -88,6 +89,8 @@ class ContractTests(unittest.TestCase):
                 "model_open",
                 "model_export",
                 "model_list",
+                "artifact_seal",
+                "artifact_verify",
                 "integrity_report",
                 "repair_reverse_face",
                 "repair_erase_degenerate",
@@ -202,6 +205,8 @@ class ContractTests(unittest.TestCase):
         self.assertIn("model_open", payload["preferred_tools"])
         self.assertIn("model_export", payload["preferred_tools"])
         self.assertIn("model_list", payload["preferred_tools"])
+        self.assertIn("artifact_seal", payload["preferred_tools"])
+        self.assertIn("artifact_verify", payload["preferred_tools"])
         self.assertIn("integrity_report", payload["preferred_tools"])
         self.assertIn("repair_reverse_face", payload["preferred_tools"])
         self.assertIn("repair_erase_degenerate", payload["preferred_tools"])
@@ -280,6 +285,14 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(by_tool["create_arc"]["safety_class"], "strict_mutation")
         self.assertEqual(by_tool["create_polygon"]["safety_class"], "strict_mutation")
         self.assertEqual(by_tool["create_polygon"]["identity_semantics"], "new_group_polygon")
+        self.assertEqual(by_tool["create_mesh"]["safety_class"], "strict_mutation")
+        self.assertTrue(by_tool["create_mesh"]["rollback_verified"])
+        self.assertEqual(by_tool["create_mesh"]["identity_semantics"], "new_group_indexed_mesh")
+        self.assertEqual(by_tool["create_mesh"]["limits"]["max_vertices"], 2048)
+        self.assertEqual(by_tool["create_mesh"]["limits"]["max_faces"], 4096)
+        self.assertEqual(by_tool["create_mesh"]["limits"]["max_face_vertices"], 16)
+        self.assertEqual(by_tool["create_mesh"]["limits"]["max_index_references"], 32768)
+        self.assertEqual(by_tool["create_mesh"]["runtime_versions"], ["24.0.594"])
         self.assertEqual(by_tool["sweep_profile"]["safety_class"], "strict_mutation")
         self.assertTrue(by_tool["sweep_profile"]["rollback_verified"])
         self.assertEqual(by_tool["sweep_profile"]["identity_semantics"], "profile_path_reparented_new_group_pid")
@@ -288,18 +301,29 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(by_tool["measure_distance"]["safety_class"], "read_only")
         self.assertEqual(by_tool["measure_distance"]["receipt_kind"], "query")
         self.assertEqual(by_tool["measure_distance"]["unit_semantics"], "explicit:mm|cm|m|in|ft|model")
+        self.assertEqual(by_tool["measure_distance"]["identity_semantics"], "pid_pair_exact_manifold_surface")
+        self.assertEqual(by_tool["measure_distance"]["limits"]["max_spatial_triangles"], 1024)
+        self.assertEqual(by_tool["measure_distance"]["runtime_versions"], ["24.0.594"])
         self.assertEqual(by_tool["query_topology"]["safety_class"], "read_only")
         self.assertEqual(by_tool["query_topology"]["receipt_kind"], "query")
         self.assertEqual(by_tool["query_overlap"]["safety_class"], "read_only")
         self.assertEqual(by_tool["query_overlap"]["receipt_kind"], "query")
+        self.assertEqual(by_tool["query_overlap"]["identity_semantics"], "pid_pair_exact_manifold_surface")
+        self.assertEqual(by_tool["query_overlap"]["limits"]["max_triangle_pairs"], 1048576)
+        self.assertEqual(by_tool["query_overlap"]["runtime_versions"], ["24.0.594"])
         self.assertEqual(by_tool["asset_list"]["safety_class"], "read_only")
         self.assertEqual(by_tool["asset_list"]["receipt_kind"], "query")
         self.assertFalse(by_tool["asset_list"]["deprecated"])
+        self.assertEqual(by_tool["asset_list"]["identity_semantics"], "registry_exact_file_sha256_native_version")
+        self.assertEqual(by_tool["asset_list"]["limits"]["max_registry_entries"], 256)
+        self.assertEqual(by_tool["asset_list"]["limits"]["max_registry_hash_bytes"], 536870912)
+        self.assertEqual(by_tool["asset_list"]["runtime_versions"], ["24.0.594"])
         self.assertEqual(by_tool["place_asset"]["safety_class"], "strict_mutation")
         self.assertTrue(by_tool["place_asset"]["rollback_verified"])
-        self.assertEqual(by_tool["place_asset"]["identity_semantics"], "new_instance_shared_definition")
-        self.assertEqual(by_tool["place_asset"]["preconditions"], ["if_context"])
+        self.assertEqual(by_tool["place_asset"]["identity_semantics"], "new_instance_verified_sha256_native_version_definition")
+        self.assertEqual(by_tool["place_asset"]["preconditions"], ["if_context", "target_context"])
         self.assertEqual(by_tool["place_asset"]["limits"]["max_asset_bytes"], 67108864)
+        self.assertEqual(by_tool["place_asset"]["runtime_versions"], ["24.0.594"])
         self.assertEqual(by_tool["texture_list"]["safety_class"], "read_only")
         self.assertEqual(by_tool["texture_list"]["receipt_kind"], "query")
         self.assertEqual(by_tool["material_info"]["safety_class"], "read_only")
@@ -328,6 +352,14 @@ class ContractTests(unittest.TestCase):
             self.assertEqual(by_tool[tool]["receipt_kind"], "external_side_effect")
         self.assertEqual(by_tool["model_list"]["safety_class"], "read_only")
         self.assertEqual(by_tool["model_list"]["receipt_kind"], "query")
+        self.assertEqual(by_tool["artifact_seal"]["safety_class"], "external_side_effect")
+        self.assertFalse(by_tool["artifact_seal"]["transactional"])
+        self.assertFalse(by_tool["artifact_seal"]["rollback_verified"])
+        self.assertEqual(by_tool["artifact_seal"]["limits"]["max_artifact_bytes"], 1073741824)
+        self.assertEqual(by_tool["artifact_seal"]["runtime_versions"], ["24.0.594"])
+        self.assertEqual(by_tool["artifact_verify"]["safety_class"], "read_only")
+        self.assertEqual(by_tool["artifact_verify"]["receipt_kind"], "query")
+        self.assertEqual(by_tool["artifact_verify"]["runtime_versions"], ["24.0.594"])
         self.assertEqual(by_tool["integrity_report"]["safety_class"], "read_only")
         self.assertEqual(by_tool["integrity_report"]["receipt_kind"], "query")
         self.assertEqual(by_tool["repair_reverse_face"]["safety_class"], "strict_mutation")
@@ -368,6 +400,9 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(by_tool["transform_entity"]["unit_semantics"], "explicit:mm|cm|m|in|ft|model")
         self.assertEqual(by_tool["get_entity_state"]["unit_semantics"], "explicit:mm|cm|m|in|ft|model")
         self.assertEqual(by_tool["execute_geometry"]["coordinate_space"], ["active_context"])
+        self.assertEqual(by_tool["execute_geometry"]["preconditions"], ["if_context", "if_match", "target_context"])
+        self.assertEqual(by_tool["execute_geometry"]["limits"]["max_context_depth"], 32)
+        self.assertEqual(by_tool["execute_geometry"]["runtime_versions"], ["24.0.594"])
         self.assertEqual(by_tool["object_move"]["unit_semantics"], "internal_inches")
 
     def test_capability_metadata_reports_observed_runtime_without_turning_it_into_support_policy(self) -> None:

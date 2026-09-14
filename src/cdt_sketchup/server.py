@@ -198,8 +198,9 @@ async def execute_geometry(
     coordinate_space: str = DEFAULT_COORDINATE_SPACE,
     if_context: dict[str, str] | None = None,
     if_match: str | dict[str, str] | None = None,
+    target_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Execute one closed action with optional optimistic context/entity preconditions."""
+    """Execute one closed action, optionally inside a bounded nested instance path."""
     unit = validate_public_unit(unit)
     coordinate_space = validate_coordinate_space(coordinate_space)
     payload: dict[str, Any] = {
@@ -213,6 +214,8 @@ async def execute_geometry(
         payload["if_context"] = if_context
     if if_match is not None:
         payload["if_match"] = if_match
+    if target_context is not None:
+        payload["target_context"] = target_context
     return await _call_bridge("execute_geometry", payload)
 
 
@@ -695,6 +698,35 @@ async def create_polygon(
 
 
 @mcp.tool()
+async def create_mesh(
+    name: str,
+    points: list[list[float]],
+    faces: list[list[int]],
+    unit: str = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    if_context: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Create a bounded indexed polygon mesh grouped as one semantic object."""
+    unit = validate_public_unit(unit)
+    coordinate_space = validate_coordinate_space(coordinate_space)
+    payload: dict[str, Any] = {
+        "action": "create_mesh",
+        "params": {"name": name, "points": points, "faces": faces},
+        "expect": {
+            "active_entity_delta": 1,
+            "type": "Group",
+            "vertex_count": len(points),
+            "face_count": len(faces),
+        },
+        "unit": unit,
+        "coordinate_space": coordinate_space,
+    }
+    if if_context is not None:
+        payload["if_context"] = if_context
+    return await _call_bridge("execute_geometry", payload)
+
+
+@mcp.tool()
 async def sweep_profile(
     face_pid: int,
     path_pids: list[int],
@@ -743,7 +775,7 @@ async def measure_distance(
     second_pid: int,
     unit: str = DEFAULT_PUBLIC_UNIT,
 ) -> dict[str, Any]:
-    """Measure center distance and bounds gap between two entities."""
+    """Measure exact manifold-solid surface clearance plus legacy center/bounds facts."""
     unit = validate_public_unit(unit)
     return await _call_bridge(
         "measure_distance", {"first_pid": first_pid, "second_pid": second_pid, "unit": unit}
@@ -766,7 +798,7 @@ async def query_overlap(
     second_pid: int,
     unit: str = DEFAULT_PUBLIC_UNIT,
 ) -> dict[str, Any]:
-    """Report bounding-box overlap between two entities."""
+    """Report exact manifold-solid disjoint/touching/penetrating relation plus bounds facts."""
     unit = validate_public_unit(unit)
     return await _call_bridge(
         "query_overlap", {"first_pid": first_pid, "second_pid": second_pid, "unit": unit}
@@ -789,8 +821,9 @@ async def place_asset(
     unit: str = DEFAULT_PUBLIC_UNIT,
     coordinate_space: str = DEFAULT_COORDINATE_SPACE,
     if_context: dict[str, str] | None = None,
+    target_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Place a new instance of a registry asset at an absolute transform."""
+    """Place one verified registry asset, optionally inside a bounded nested instance path."""
     unit = validate_public_unit(unit)
     coordinate_space = validate_coordinate_space(coordinate_space)
     registry = await _call_bridge("asset_list", {"unit": unit})
@@ -800,6 +833,12 @@ async def place_asset(
     match = next((row for row in assets if row.get("asset_key") == asset_key), None)
     if match is None:
         return _error("asset_not_found", "Component asset was not found.", retryable=False)
+    if match.get("available") is not True:
+        return _error(
+            "asset_identity_unverified",
+            "Component asset identity is not verified.",
+            retryable=False,
+        )
     payload: dict[str, Any] = {
         "action": "place_asset",
         "params": {"asset_key": asset_key, "matrix": matrix},
@@ -813,6 +852,8 @@ async def place_asset(
     }
     if if_context is not None:
         payload["if_context"] = if_context
+    if target_context is not None:
+        payload["target_context"] = target_context
     return await _call_bridge("execute_geometry", payload)
 
 
@@ -978,6 +1019,18 @@ async def model_export(
 async def model_list() -> dict[str, Any]:
     """List saved models in the rooted models directory."""
     return await _call_bridge("model_list", {})
+
+
+@mcp.tool()
+async def artifact_seal(file: str) -> dict[str, Any]:
+    """Seal one saved rooted SKP as a content-addressed accepted artifact."""
+    return await _call_bridge("artifact_seal", {"file": file})
+
+
+@mcp.tool()
+async def artifact_verify(file: str, sha256: str) -> dict[str, Any]:
+    """Verify a rooted SKP against an accepted content-addressed artifact seal."""
+    return await _call_bridge("artifact_verify", {"file": file, "sha256": sha256})
 
 
 @mcp.tool()

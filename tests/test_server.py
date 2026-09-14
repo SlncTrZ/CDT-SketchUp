@@ -55,6 +55,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "create_circle",
                 "create_arc",
                 "create_polygon",
+                "create_mesh",
                 "sweep_profile",
                 "measure_distance",
                 "query_topology",
@@ -73,6 +74,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "model_open",
                 "model_export",
                 "model_list",
+                "artifact_seal",
+                "artifact_verify",
                 "integrity_report",
                 "repair_reverse_face",
                 "repair_erase_degenerate",
@@ -271,6 +274,23 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         payload = call.await_args.args[1]
         self.assertEqual(payload["if_context"], context)
         self.assertNotIn("if_match", payload)
+
+    async def test_generic_execute_geometry_forwards_bounded_target_context(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
+        target_context = {"instance_path": [101, 202, 303]}
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "execute_geometry",
+                    {
+                        "action": "create_box",
+                        "params": {"name": "NESTED", "dimensions": [1.0, 2.0, 3.0]},
+                        "expect": {"active_entity_delta": 1, "type": "ComponentInstance"},
+                        "target_context": target_context,
+                    },
+                )
+        self.assertFalse(result.is_error)
+        self.assertEqual(call.await_args.args[1]["target_context"], target_context)
 
     async def test_structural_kernel_tools_route_through_semantic_loop(self) -> None:
         matrix = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 10.0, 20.0, 30.0, 1.0]
@@ -704,6 +724,25 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["expect"]["vertex_count"], 6)
         self.assertEqual(payload["expect"]["edge_count"], 6)
 
+    async def test_create_mesh_forwards_indexed_faces_and_exact_counts(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
+        points = [[0.0,0.0,0.0],[10.0,0.0,0.0],[0.0,10.0,0.0],[0.0,0.0,10.0]]
+        faces = [[0,2,1],[0,1,3],[1,2,3],[2,0,3]]
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "create_mesh",
+                    {"name":"tetra","points":points,"faces":faces,"unit":"mm"},
+                )
+        self.assertFalse(result.is_error)
+        payload = call.await_args.args[1]
+        self.assertEqual(payload["action"], "create_mesh")
+        self.assertEqual(payload["params"], {"name":"tetra","points":points,"faces":faces})
+        self.assertEqual(payload["expect"]["active_entity_delta"], 1)
+        self.assertEqual(payload["expect"]["type"], "Group")
+        self.assertEqual(payload["expect"]["vertex_count"], 4)
+        self.assertEqual(payload["expect"]["face_count"], 4)
+
     async def test_sweep_profile_forwards_face_path_and_match_set(self) -> None:
         call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
         context = {"id": "a" * 64, "revision": "b" * 64}
@@ -784,7 +823,14 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_place_asset_forwards_key_matrix_and_name(self) -> None:
         matrix = [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 10.0,20.0,30.0,1.0]
-        registry = {"assets": [{"asset_key": "farmhouse", "name": "farmhouse", "file": "farmhouse.skp"}]}
+        registry = {"assets": [{
+            "asset_key": "farmhouse",
+            "name": "farmhouse",
+            "file": "farmhouse.skp",
+            "available": True,
+            "sha256": "a" * 64,
+            "native_version": "1.0.0",
+        }]}
         call = AsyncMock(side_effect=[registry, {"receipt_schema_version": 1, "committed": True}])
         with patch("cdt_sketchup.server._bridge.call", call):
             async with Client(mcp, raise_exceptions=True) as client:
@@ -809,6 +855,23 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "coordinate_space": "active_context",
             },
         )
+
+    async def test_place_asset_fails_closed_for_unverified_registry_identity(self) -> None:
+        call = AsyncMock(return_value={"assets": [{
+            "asset_key": "farmhouse",
+            "available": False,
+            "reason": "asset_identity_unverified",
+        }]})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "place_asset", {"asset_key": "farmhouse", "matrix": [1.0] * 16}
+                )
+        self.assertFalse(result.is_error)
+        payload = result.structured_content
+        self.assertEqual(payload.get("ok"), False)
+        self.assertEqual(payload["error"]["kind"], "asset_identity_unverified")
+        call.assert_awaited_once_with("asset_list", {"unit": "in"})
 
     async def test_place_asset_fails_closed_for_unknown_key(self) -> None:
         call = AsyncMock(return_value={"assets": []})
@@ -969,6 +1032,27 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 result = await client.call_tool("model_list", {})
         self.assertFalse(result.is_error)
         call.assert_awaited_once_with("model_list", {})
+
+    async def test_artifact_seal_and_verify_forward_rooted_identity(self) -> None:
+        call = AsyncMock(return_value={"receipt_schema_version": 1, "side_effect_verified": True})
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                sealed = await client.call_tool("artifact_seal", {"file": "accepted.skp"})
+        self.assertFalse(sealed.is_error)
+        call.assert_awaited_once_with("artifact_seal", {"file": "accepted.skp"})
+
+        call.reset_mock()
+        call.return_value = {"receipt_schema_version": 1, "verified": True}
+        digest = "a" * 64
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                verified = await client.call_tool(
+                    "artifact_verify", {"file": "accepted.skp", "sha256": digest}
+                )
+        self.assertFalse(verified.is_error)
+        call.assert_awaited_once_with(
+            "artifact_verify", {"file": "accepted.skp", "sha256": digest}
+        )
 
     async def test_integrity_report_forwards_query(self) -> None:
         call = AsyncMock(return_value={"issue_count": 0})

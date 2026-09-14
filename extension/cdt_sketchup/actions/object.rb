@@ -590,6 +590,7 @@ module CDTSketchUp
       preflight_create_circle(model, action_params) if action == "create_circle"
       preflight_create_arc(model, action_params) if action == "create_arc"
       preflight_create_polygon(model, action_params) if action == "create_polygon"
+      preflight_create_mesh(model, action_params) if action == "create_mesh"
       preflight_place_asset(model, action_params) if action == "place_asset"
       preflight_repair_reverse_face(model, action_params) if action == "repair_reverse_face"
       preflight_repair_erase_degenerate(model, action_params) if action == "repair_erase_degenerate"

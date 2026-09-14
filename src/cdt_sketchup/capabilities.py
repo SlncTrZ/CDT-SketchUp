@@ -14,7 +14,18 @@ VERIFIED_SKETCHUP_RUNTIME_VERSIONS = ("24.0.594",)
 BRIDGE_FRAME_BYTES = 256 * 1024
 MAX_OBJECTS = 500
 MAX_FACE_POINTS = 512
+MAX_MESH_VERTICES = 2048
+MAX_MESH_FACES = 4096
+MAX_MESH_FACE_VERTICES = 16
+MAX_MESH_INDEX_REFERENCES = 32768
+MAX_SPATIAL_TRIANGLES = 1024
+MAX_SPATIAL_PAIR_TESTS = 1_048_576
+MAX_ARTIFACT_BYTES = 1_073_741_824
 MAX_FINGERPRINT_EDGES = 20_000
+MAX_CONTEXT_DEPTH = 32
+MAX_ASSET_REGISTRY_ENTRIES = 256
+MAX_ASSET_REGISTRY_HASH_BYTES = 512 * 1024 * 1024
+MAX_ASSET_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -89,6 +100,7 @@ def _read(
     units: str = "none",
     limits: dict[str, int] | None = None,
     receipt_kind: str | None = None,
+    runtime_versions: tuple[str, ...] | None = None,
 ) -> CapabilityDescriptor:
     merged_limits = {"bridge_frame_bytes": BRIDGE_FRAME_BYTES}
     if limits:
@@ -107,7 +119,11 @@ def _read(
         coordinate_space=("active_context",),
         idempotence="read_only",
         limits=merged_limits,
-        runtime_versions=VERIFIED_SKETCHUP_RUNTIME_VERSIONS,
+        runtime_versions=(
+            VERIFIED_SKETCHUP_RUNTIME_VERSIONS
+            if runtime_versions is None
+            else runtime_versions
+        ),
         deprecated=False,
         replacement=None,
         preferred=True,
@@ -127,6 +143,7 @@ def _strict(
     idempotence: str,
     limits: dict[str, int] | None = None,
     preconditions: tuple[str, ...] = ("if_context", "if_match"),
+    runtime_versions: tuple[str, ...] | None = None,
 ) -> CapabilityDescriptor:
     merged_limits = {
         "bridge_frame_bytes": BRIDGE_FRAME_BYTES,
@@ -149,7 +166,11 @@ def _strict(
         coordinate_space=("active_context",),
         idempotence=idempotence,
         limits=merged_limits,
-        runtime_versions=VERIFIED_SKETCHUP_RUNTIME_VERSIONS,
+        runtime_versions=(
+            VERIFIED_SKETCHUP_RUNTIME_VERSIONS
+            if runtime_versions is None
+            else runtime_versions
+        ),
         deprecated=False,
         replacement=None,
         preferred=True,
@@ -167,7 +188,12 @@ def _external_side_effect(
     identity: str,
     idempotence: str,
     preconditions: tuple[str, ...] = (),
+    limits: dict[str, int] | None = None,
+    runtime_versions: tuple[str, ...] | None = None,
 ) -> CapabilityDescriptor:
+    merged_limits = {"bridge_frame_bytes": BRIDGE_FRAME_BYTES}
+    if limits:
+        merged_limits.update(limits)
     return CapabilityDescriptor(
         tool=tool,
         key=key,
@@ -181,8 +207,12 @@ def _external_side_effect(
         unit_semantics="none",
         coordinate_space=("application",),
         idempotence=idempotence,
-        limits={"bridge_frame_bytes": BRIDGE_FRAME_BYTES},
-        runtime_versions=VERIFIED_SKETCHUP_RUNTIME_VERSIONS,
+        limits=merged_limits,
+        runtime_versions=(
+            VERIFIED_SKETCHUP_RUNTIME_VERSIONS
+            if runtime_versions is None
+            else runtime_versions
+        ),
         deprecated=False,
         replacement=None,
         preferred=True,
@@ -284,7 +314,9 @@ CAPABILITY_DESCRIPTORS: tuple[CapabilityDescriptor, ...] = (
         identity="action_defined",
         units="explicit:mm|cm|m|in|ft|model",
         idempotence="action_defined",
-        limits={"max_face_points": MAX_FACE_POINTS},
+        limits={"max_face_points": MAX_FACE_POINTS, "max_context_depth": MAX_CONTEXT_DEPTH},
+        preconditions=("if_context", "if_match", "target_context"),
+        runtime_versions=VERIFIED_SKETCHUP_RUNTIME_VERSIONS,
     ),
     _read(
         "get_entity_state",
@@ -437,6 +469,22 @@ CAPABILITY_DESCRIPTORS: tuple[CapabilityDescriptor, ...] = (
         preconditions=("if_context",),
     ),
     _strict(
+        "create_mesh",
+        "sketchup.geometry.mesh_create",
+        destructive=False,
+        identity="new_group_indexed_mesh",
+        units="explicit:mm|cm|m|in|ft|model",
+        idempotence="not_idempotent",
+        limits={
+            "max_vertices": MAX_MESH_VERTICES,
+            "max_faces": MAX_MESH_FACES,
+            "max_face_vertices": MAX_MESH_FACE_VERTICES,
+            "max_index_references": MAX_MESH_INDEX_REFERENCES,
+        },
+        preconditions=("if_context",),
+        runtime_versions=VERIFIED_SKETCHUP_RUNTIME_VERSIONS,
+    ),
+    _strict(
         "sweep_profile",
         "sketchup.geometry.sweep",
         destructive=False,
@@ -449,9 +497,11 @@ CAPABILITY_DESCRIPTORS: tuple[CapabilityDescriptor, ...] = (
     _read(
         "measure_distance",
         "sketchup.measure.distance",
-        identity="pid_pair_exact",
+        identity="pid_pair_exact_manifold_surface",
         units="explicit:mm|cm|m|in|ft|model",
+        limits={"max_spatial_triangles": MAX_SPATIAL_TRIANGLES, "max_triangle_pairs": MAX_SPATIAL_PAIR_TESTS},
         receipt_kind="query",
+        runtime_versions=VERIFIED_SKETCHUP_RUNTIME_VERSIONS,
     ),
     _read(
         "query_topology",
@@ -464,26 +514,35 @@ CAPABILITY_DESCRIPTORS: tuple[CapabilityDescriptor, ...] = (
     _read(
         "query_overlap",
         "sketchup.spatial.overlap",
-        identity="pid_pair_exact",
+        identity="pid_pair_exact_manifold_surface",
         units="explicit:mm|cm|m|in|ft|model",
+        limits={"max_spatial_triangles": MAX_SPATIAL_TRIANGLES, "max_triangle_pairs": MAX_SPATIAL_PAIR_TESTS},
         receipt_kind="query",
+        runtime_versions=VERIFIED_SKETCHUP_RUNTIME_VERSIONS,
     ),
     _read(
         "asset_list",
         "sketchup.asset.registry",
-        identity="registry_listing",
+        identity="registry_exact_file_sha256_native_version",
         units="none",
+        limits={
+            "max_registry_entries": MAX_ASSET_REGISTRY_ENTRIES,
+            "max_registry_hash_bytes": MAX_ASSET_REGISTRY_HASH_BYTES,
+            "max_asset_bytes": MAX_ASSET_BYTES,
+        },
         receipt_kind="query",
+        runtime_versions=VERIFIED_SKETCHUP_RUNTIME_VERSIONS,
     ),
     _strict(
         "place_asset",
         "sketchup.asset.place",
         destructive=False,
-        identity="new_instance_shared_definition",
+        identity="new_instance_verified_sha256_native_version_definition",
         units="explicit:mm|cm|m|in|ft|model",
         idempotence="not_idempotent",
-        limits={"max_asset_bytes": 67108864},
-        preconditions=("if_context",),
+        limits={"max_asset_bytes": MAX_ASSET_BYTES, "max_context_depth": MAX_CONTEXT_DEPTH},
+        preconditions=("if_context", "target_context"),
+        runtime_versions=VERIFIED_SKETCHUP_RUNTIME_VERSIONS,
     ),
     _read(
         "texture_list",
@@ -576,6 +635,25 @@ CAPABILITY_DESCRIPTORS: tuple[CapabilityDescriptor, ...] = (
         identity="file_listing",
         units="none",
         receipt_kind="query",
+    ),
+    _external_side_effect(
+        "artifact_seal",
+        "sketchup.artifact.seal",
+        destructive=False,
+        identity="rooted_source_to_content_addressed_sha256_copy",
+        idempotence="content_addressed_replay_safe",
+        preconditions=("saved_active_model",),
+        limits={"max_artifact_bytes": MAX_ARTIFACT_BYTES},
+        runtime_versions=VERIFIED_SKETCHUP_RUNTIME_VERSIONS,
+    ),
+    _read(
+        "artifact_verify",
+        "sketchup.artifact.verify",
+        identity="rooted_source_sha256_and_content_addressed_copy",
+        units="none",
+        limits={"max_artifact_bytes": MAX_ARTIFACT_BYTES},
+        receipt_kind="query",
+        runtime_versions=VERIFIED_SKETCHUP_RUNTIME_VERSIONS,
     ),
     _read(
         "integrity_report",

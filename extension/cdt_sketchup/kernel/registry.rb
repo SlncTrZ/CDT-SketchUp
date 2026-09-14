@@ -26,6 +26,8 @@ module CDTSketchUp
       "model_open" => :handle_model_open,
       "model_export" => :handle_model_export,
       "model_list" => :handle_model_list,
+      "artifact_seal" => :handle_artifact_seal,
+      "artifact_verify" => :handle_artifact_verify,
       "integrity_report" => :handle_integrity_report,
       "create_edge" => :handle_create_edge,
       "create_face" => :handle_create_face,
@@ -60,6 +62,7 @@ module CDTSketchUp
       "create_circle" => :execute_create_circle,
       "create_arc" => :execute_create_arc,
       "create_polygon" => :execute_create_polygon,
+      "create_mesh" => :execute_create_mesh,
       "sweep_profile" => :execute_sweep_profile,
       "place_asset" => :execute_place_asset,
       "material_apply_texture" => :execute_material_apply_texture,
@@ -116,6 +119,7 @@ module CDTSketchUp
     CIRCLE_PARAM_KEYS = %w[center normal radius segments].freeze
     ARC_PARAM_KEYS = %w[center normal radius start_degrees end_degrees segments].freeze
     POLYGON_PARAM_KEYS = %w[center normal radius sides].freeze
+    MESH_PARAM_KEYS = %w[name points faces].freeze
     SWEEP_PROFILE_PARAM_KEYS = %w[face_pid path_pids].freeze
     PLACE_ASSET_PARAM_KEYS = %w[asset_key matrix].freeze
     MATERIAL_TEXTURE_PARAM_KEYS = %w[material texture_key width height].freeze
@@ -124,6 +128,7 @@ module CDTSketchUp
     ERASE_DEGENERATE_PARAM_KEYS = %w[persistent_id].freeze
     CAMERA_SET_PARAM_KEYS = %w[eye target up fov].freeze
     SCENE_CREATE_PARAM_KEYS = %w[name].freeze
+    TARGET_CONTEXT_KEYS = %w[instance_path].freeze
     MEASURE_DISTANCE_PARAM_KEYS = %w[first_pid second_pid unit].freeze
     QUERY_TOPOLOGY_PARAM_KEYS = %w[persistent_id unit].freeze
     QUERY_OVERLAP_PARAM_KEYS = %w[first_pid second_pid unit].freeze
@@ -133,6 +138,8 @@ module CDTSketchUp
     MODEL_SAVE_AS_PARAM_KEYS = %w[file overwrite].freeze
     MODEL_OPEN_PARAM_KEYS = %w[file if_model_guid].freeze
     MODEL_EXPORT_PARAM_KEYS = %w[file format overwrite width height].freeze
+    ARTIFACT_SEAL_PARAM_KEYS = %w[file].freeze
+    ARTIFACT_VERIFY_PARAM_KEYS = %w[file sha256].freeze
     BOOLEAN_OPERATION_TYPES = %w[union difference intersect].freeze
     MIN_TRANSFORM_DETERMINANT = 1e-12
     MODEL_EXPORT_FORMATS = %w[dae kmz png jpg].freeze
@@ -140,5 +147,7 @@ module CDTSketchUp
   TEXTURE_MANIFEST_FILENAME = "textures.json".freeze
   TEXTURE_EXTENSIONS = %w[.png .jpg .jpeg .bmp].freeze
   ASSET_MANIFEST_FILENAME = "assets.json".freeze
+  ASSET_ATTRIBUTE_DICTIONARY = "CDT-SketchUp.AssetIdentity".freeze
+  ASSET_ATTRIBUTE_KEYS = %w[asset_key sha256 native_version].freeze
   end
 end

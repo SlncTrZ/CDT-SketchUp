@@ -10,8 +10,8 @@ module CDTSketchUp
       model = require_model
       unit_info = resolve_public_unit(model, params["unit"] || "in")
       first_pid, second_pid = query_pid_pair(params, %w[first_pid second_pid])
-      first = require_entity_by_pid(model, first_pid)
-      second = require_entity_by_pid(model, second_pid)
+      first = require_spatial_solid(model, first_pid)
+      second = require_spatial_solid(model, second_pid)
       first_center = point_to_triplet(first.bounds.center)
       second_center = point_to_triplet(second.bounds.center)
       center_distance = Math.sqrt(
@@ -26,13 +26,15 @@ module CDTSketchUp
       end
       bounds_gap = Math.sqrt(axis_gaps[0]**2 + axis_gaps[1]**2 + axis_gaps[2]**2)
       resolved = unit_info["resolved_unit"]
+      exact = exact_spatial_relation(model, first_pid, second_pid, unit_info)
       state = {
         "query" => "measure_distance",
         "first_pid" => first_pid,
         "second_pid" => second_pid,
         "center_distance" => quantize_public_number(convert_length_from_internal(center_distance, resolved)),
         "bounds_gap" => quantize_public_number(convert_length_from_internal(bounds_gap, resolved)),
-        "overlap" => bounds_gap == 0.0,
+        "bounds_overlap" => bounds_gap == 0.0
+      }.merge(exact).merge(
         "semantic_fingerprint" => Digest::SHA256.hexdigest(
           JSON.generate(
             {
@@ -42,7 +44,7 @@ module CDTSketchUp
             }
           )
         )
-      }
+      )
       snapshot = semantic_active_entity_snapshot(model)
       model_fingerprint = semantic_model_fingerprint(model, active_snapshot: snapshot)
       query_context = receipt_context(model, model_fingerprint: model_fingerprint)
@@ -62,8 +64,8 @@ module CDTSketchUp
       model = require_model
       unit_info = resolve_public_unit(model, params["unit"] || "in")
       first_pid, second_pid = query_pid_pair(params, %w[first_pid second_pid])
-      first = require_entity_by_pid(model, first_pid)
-      second = require_entity_by_pid(model, second_pid)
+      first = require_spatial_solid(model, first_pid)
+      second = require_spatial_solid(model, second_pid)
       first_box = box_triplet(first.bounds)
       second_box = box_triplet(second.bounds)
       lower = 3.times.map { |index| [first_box[0][index], second_box[0][index]].max }
@@ -76,12 +78,14 @@ module CDTSketchUp
                         "max" => convert_triplet_from_internal(upper, resolved)
                       }
                     end
+      exact = exact_spatial_relation(model, first_pid, second_pid, unit_info)
       state = {
         "query" => "query_overlap",
         "first_pid" => first_pid,
         "second_pid" => second_pid,
-        "overlap" => overlap,
-        "overlap_box" => overlap_box,
+        "bounds_overlap" => overlap,
+        "overlap_box" => overlap_box
+      }.merge(exact).merge(
         "semantic_fingerprint" => Digest::SHA256.hexdigest(
           JSON.generate(
             {
@@ -91,7 +95,7 @@ module CDTSketchUp
             }
           )
         )
-      }
+      )
       snapshot = semantic_active_entity_snapshot(model)
       model_fingerprint = semantic_model_fingerprint(model, active_snapshot: snapshot)
       query_context = receipt_context(model, model_fingerprint: model_fingerprint)

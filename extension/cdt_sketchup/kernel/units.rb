@@ -79,7 +79,7 @@ module CDTSketchUp
         if params.key?("origin")
           params["origin"] = length_triplet_to_internal(params["origin"], "origin", unit)
         end
-      when "create_face"
+      when "create_face", "create_mesh"
         points = params["points"]
         if points.is_a?(Array)
           params["points"] = points.each_with_index.map do |point, index|

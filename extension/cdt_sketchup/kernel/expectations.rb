@@ -473,6 +473,35 @@ module CDTSketchUp
             "create_polygon expect contains unsupported keys: #{unsupported_polygon_expect.sort.join(', ')}"
           )
         end
+      when "create_mesh"
+        _name, points, faces, = validate_mesh_params(action_params)
+        unless Integer(expect["active_entity_delta"]) == 1
+          raise BridgeError.new("invalid_argument", "create_mesh requires expect.active_entity_delta = 1")
+        end
+        unless expect["type"] == "Group"
+          raise BridgeError.new("invalid_argument", "create_mesh requires expect.type = Group")
+        end
+        unless expect.key?("vertex_count")
+          raise BridgeError.new("invalid_argument", "create_mesh requires expect.vertex_count")
+        end
+        unless expect.key?("face_count")
+          raise BridgeError.new("invalid_argument", "create_mesh requires expect.face_count")
+        end
+        unless Integer(expect["vertex_count"]) == points.length
+          raise BridgeError.new("invalid_argument", "create_mesh expect.vertex_count must match points")
+        end
+        unless Integer(expect["face_count"]) == faces.length
+          raise BridgeError.new("invalid_argument", "create_mesh expect.face_count must match faces")
+        end
+        unsupported_mesh_expect = expect.keys - %w[
+          active_entity_delta type vertex_count face_count manifold volume bounds_min bounds_max bounds_size tolerance
+        ]
+        unless unsupported_mesh_expect.empty?
+          raise BridgeError.new(
+            "invalid_argument",
+            "create_mesh expect contains unsupported keys: #{unsupported_mesh_expect.sort.join(', ')}"
+          )
+        end
       when "sweep_profile"
         face_pid, path_pids = validate_sweep_profile_params(action_params)
         profile = Sketchup.active_model.find_entity_by_persistent_id(face_pid)
@@ -1316,7 +1345,7 @@ module CDTSketchUp
           semantic_check("affected.modified", [state["persistent_id"]], affected["modified"]),
           semantic_check("affected.deleted", [], affected["deleted"])
         ]
-      when "create_polyline", "create_circle", "create_arc", "create_rectangle", "create_polygon"
+      when "create_polyline", "create_circle", "create_arc", "create_rectangle", "create_polygon", "create_mesh"
         return [
           semantic_check("affected.created", [state["persistent_id"]], affected["created"]),
           semantic_check("affected.modified", [], affected["modified"]),

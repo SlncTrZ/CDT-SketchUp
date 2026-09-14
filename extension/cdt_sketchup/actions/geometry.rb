@@ -166,6 +166,65 @@ module CDTSketchUp
       [center, normal, radius, sides]
     end
 
+    def validate_mesh_params(params)
+      unless params.is_a?(Hash)
+        raise BridgeError.new("invalid_argument", "create_mesh params must be an object")
+      end
+      unknown_keys = params.keys - MESH_PARAM_KEYS
+      unless unknown_keys.empty?
+        raise BridgeError.new(
+          "invalid_argument",
+          "create_mesh params contain unsupported keys: #{unknown_keys.sort.join(', ')}"
+        )
+      end
+      name = params.key?("name") ? bounded_name(params["name"], "name") : nil
+      raw_points = params["points"]
+      unless raw_points.is_a?(Array) && raw_points.length.between?(3, MAX_MESH_VERTICES)
+        raise BridgeError.new("invalid_argument", "mesh points must contain 3..2048 vertices")
+      end
+      points = raw_points.each_with_index.map do |point, index|
+        numeric_triplet(point, "points[#{index}]")
+      end
+      if points.uniq.length != points.length
+        raise BridgeError.new("invalid_geometry", "mesh points must be unique")
+      end
+
+      raw_faces = params["faces"]
+      unless raw_faces.is_a?(Array) && raw_faces.length.between?(1, MAX_MESH_FACES)
+        raise BridgeError.new("invalid_argument", "mesh faces must contain 1..4096 polygons")
+      end
+      index_references = 0
+      faces = raw_faces.each_with_index.map do |face, face_index|
+        unless face.is_a?(Array) && face.length.between?(3, MAX_MESH_FACE_VERTICES)
+          raise BridgeError.new(
+            "invalid_argument",
+            "faces[#{face_index}] must contain 3..#{MAX_MESH_FACE_VERTICES} vertex indexes"
+          )
+        end
+        indexes = face.each_with_index.map do |value, index|
+          bounded_integer(
+            value,
+            minimum: 0,
+            maximum: points.length - 1,
+            name: "faces[#{face_index}][#{index}]"
+          )
+        end
+        if indexes.uniq.length != indexes.length
+          raise BridgeError.new("invalid_geometry", "mesh face indexes must be unique within a face")
+        end
+        index_references += indexes.length
+        indexes
+      end
+      if index_references > MAX_MESH_INDEX_REFERENCES
+        raise BridgeError.new("complexity_budget_exceeded", "mesh index references exceed the bounded budget")
+      end
+      canonical_faces = faces.map { |face| face.sort }
+      if canonical_faces.uniq.length != canonical_faces.length
+        raise BridgeError.new("invalid_geometry", "mesh faces must not duplicate the same vertex set")
+      end
+      [name, points, faces, index_references]
+    end
+
     def preflight_create_polyline(model, params)
       validate_polyline_params(params)
       true
@@ -188,6 +247,11 @@ module CDTSketchUp
 
     def preflight_create_polygon(model, params)
       validate_polygon_params(params)
+      true
+    end
+
+    def preflight_create_mesh(model, params)
+      validate_mesh_params(params)
       true
     end
 
@@ -401,6 +465,42 @@ module CDTSketchUp
           "sides" => sides,
           "normal" => [normal.x, normal.y, normal.z].map { |value| quantize_number(value) },
           "polygon_area" => sides * radius * radius * Math.sin(2.0 * Math::PI / sides) / 2.0
+        }
+      }
+    end
+
+    def execute_create_mesh(model, params)
+      name, points, faces, index_references = validate_mesh_params(params)
+      group = model.active_entities.add_group
+      unless group && group.valid? && group.is_a?(Sketchup::Group)
+        raise BridgeError.new("geometry_execution_failed", "SketchUp did not create the mesh group")
+      end
+      group.name = name if name
+      native_points = points.map { |point| Geom::Point3d.new(point[0], point[1], point[2]) }
+      begin
+        faces.each_with_index do |indexes, face_index|
+          face = group.entities.add_face(indexes.map { |index| native_points[index] })
+          unless face && face.valid?
+            raise BridgeError.new("invalid_geometry", "SketchUp did not create mesh face #{face_index}")
+          end
+        end
+      rescue BridgeError
+        raise
+      rescue ArgumentError, RuntimeError => error
+        log("create mesh failed: #{error.class}: #{error.message}")
+        raise BridgeError.new("invalid_geometry", "SketchUp rejected indexed mesh geometry")
+      end
+      actual_faces = group.entities.grep(Sketchup::Face)
+      actual_vertices = group.entities.grep(Sketchup::Edge).flat_map { |edge| [edge.start, edge.end] }.uniq
+      unless actual_faces.length == faces.length && actual_vertices.length == points.length
+        raise BridgeError.new("invalid_geometry", "SketchUp merged or omitted indexed mesh topology")
+      end
+      {
+        "entity" => group,
+        "metadata" => {
+          "requested_vertex_count" => points.length,
+          "requested_face_count" => faces.length,
+          "index_reference_count" => index_references
         }
       }
     end

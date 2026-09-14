@@ -1,6 +1,6 @@
 # CDT-SketchUp Tool Guide
 
-> Status: contract 0.25 · measured native baseline on SketchUp 2024 · Updated: 2026-09-12
+> Status: contract 0.28 · measured native acceptance on SketchUp 2024 `24.0.594` / Ruby `3.2.2` · 67 public MCP tools · Updated: 2026-09-14
 
 ## Runtime model
 
@@ -127,9 +127,15 @@ The adapter converts to native inches once before `AI_Step`; semantic extraction
 
 ## Strict Semantic State Loop
 
-### `execute_geometry(action, params, expect)`
+### `execute_geometry(action, params, expect, target_context?)`
 
-Executes one closed geometry action inside `model.start_operation("AI_Step", true)`.
+Executes one closed geometry action inside `model.start_operation("AI_Step", true)`. Contract `0.26` optionally accepts `target_context={"instance_path":[...]}` to execute the same closed action inside a bounded nested edit context without exposing arbitrary Ruby or an unrestricted context-navigation API.
+
+`instance_path` contains 1..32 persistent IDs from outermost to innermost Group/ComponentInstance. The native bridge resolves every PID, rejects duplicates and locked/invalid paths, constructs a native `Sketchup::InstancePath`, enters it **before** starting `AI_Step`, and restores the caller edit path after the inner strict operation finishes. This ordering is intentional: changing SketchUp's active edit context is not treated as part of the mutation transaction. Invalid/stale nesting fails before mutation as `context_target_unavailable`.
+
+With `target_context`, `if_context` guards the caller context before the switch. `if_match` is then evaluated by the normal strict action in the target context. Input coordinates still use `coordinate_space="active_context"`, which means **local coordinates of the targeted edit context**; no world/model-space conversion is implied. The operation receipt keeps its normal `context_before`/`context` for the target execution and adds `context_targeting` with the requested instance path, caller context before/after, target execution contexts, and a verified restoration record.
+
+Component definition edits are shared by all instances using that definition. For instance-specific geometry, call the existing strict `make_unique` on the ComponentInstance while it is targetable in its parent context, then perform the nested edit. The provider never silently makes a component unique. If a committed target operation succeeds but caller-context restoration later cannot be verified, the committed receipt remains authoritative and `context_targeting.restoration.verified=false`; callers must inspect that state and must not blindly retry.
 
 Current action allowlist:
 
@@ -153,6 +159,7 @@ Current action allowlist:
 - `create_circle`
 - `create_arc`
 - `create_polygon`
+- `create_mesh`
 - `sweep_profile`
 
 The action, semantic extraction and validation all happen before commit. A successful step requires SketchUp to return a successful `commit_operation`; the response reports `commit_verified=true`.
@@ -265,7 +272,7 @@ Read-only component definition lookup by exact GUID. Returns the definition name
 
 ### `measure_distance(first_pid, second_pid, unit?)`
 
-Read-only measurement between any two entities: bounding-box center distance plus the minimum bounds gap (zero when boxes touch or overlap), with an explicit `overlap` boolean. Distances honor the explicit unit contract. No model mutation, no transaction.
+Read-only exact spatial measurement for two distinct manifold Group/ComponentInstance solids. The result preserves legacy `center_distance`, `bounds_gap` and `bounds_overlap` facts, then adds bounded triangulated-surface truth: `relationship=disjoint|touching|penetrating`, `surface_clearance`, collision/intersection booleans and `exact=true`. Triangle extraction includes bounded nested groups/components; non-manifold operands or triangle/pair budgets fail closed. The query performs no SketchUp boolean/copy mutation and native acceptance proves the active model count is unchanged.
 
 ### `query_topology(persistent_id)`
 
@@ -273,15 +280,34 @@ Read-only connectivity facts for one entity: bounded connected PID set (500 max,
 
 ### `query_overlap(first_pid, second_pid, unit?)`
 
-Read-only bounding-box overlap between two entities: boolean plus the exact overlap box (nil when disjoint). Touching boxes count as overlapping. No geometric intersection edges are created — true intersection construction belongs to a future topology-aware mutation contract.
+Read-only exact relation for two distinct manifold Group/ComponentInstance solids. Bounding-box overlap/box facts remain as broad-phase evidence, while the authoritative relation is derived from bounded native-face triangulation and reports `disjoint`, `touching`, or `penetrating`; a rotated-solid acceptance case proves that AABB overlap alone does not create a false collision. `clearance` is exact surface clearance for disjoint operands and zero for touching/penetrating operands. Non-manifold inputs fail as `non_manifold_operand`; no intersection geometry is created.
 
 ### `asset_list()`
 
-Read-only listing of the owner-curated component asset registry: neutral metadata per asset (key, display name, file, size). The registry lives outside the repository (`assets/` beside the bridge credential) as an `assets.json` manifest mapping keys to files.
+Read-only listing of the owner-curated component asset registry. Contract `0.26` makes registry identity cryptographic rather than filename-only: each `assets.json` entry must provide a plain `.skp` `file`, a lowercase 64-hex `sha256` for the exact file bytes, and a non-empty `native_version` owned by the catalog/release process; `name` remains optional display metadata. `native_version` is an asset/catalog version, not the SketchUp runtime version.
 
-### `place_asset(asset_key, matrix)`
+The bridge enforces canonical containment, the 64 MiB per-file cap, at most 256 manifest entries, and at most 512 MiB of aggregate hashing work per listing. `asset_list` hashes the actual file and reports `available=true` only when the bytes match the declared SHA-256; verified rows expose `asset_key`, `file`, `size_bytes`, `sha256`, and `native_version`. Invalid, missing, mismatched, or over-budget entries remain visible as `available=false` with a sanitized reason so consumers can fail closed instead of mistaking omission for success.
 
-Strict placement of a registry asset as a new component instance at an absolute transform. The MCP caller passes only the asset key — never a path. The native bridge resolves the key through the manifest, enforces plain `.skp` file names inside the registry root (traversal and extension checks fail before any load), caps file size at 64 MiB, and loads through `definitions.load`, so repeat placements efficiently share one definition (proven live: two placements, one definition GUID). Unknown keys fail as `asset_not_found` before mutation.
+Example manifest entry:
+
+```json
+{
+  "drawer_box": {
+    "name": "Drawer Box",
+    "file": "drawer_box.skp",
+    "sha256": "<64 lowercase hex characters>",
+    "native_version": "2026.09.14-1"
+  }
+}
+```
+
+### `place_asset(asset_key, matrix, target_context?)`
+
+Strict placement of a **verified** registry asset as a new component instance at an absolute transform, optionally using the same bounded nested `target_context` as `execute_geometry`. The MCP caller passes only the asset key — never a path. The bridge re-hashes the file before placement, detects incompatible/unbound same-path definitions already loaded in the model, and fails closed as `asset_definition_identity_mismatch` rather than trusting SketchUp definition-cache reuse.
+
+For a newly loaded definition, the file is hashed again after `definitions.load`; changed bytes fail as `asset_changed_during_load` and the transaction is aborted. A successful new load binds `{asset_key, sha256, native_version}` into definition attributes and reads the binding back before an instance may be placed. Reused definitions must already carry the exact same binding. `get_entity_state` and `definition_info` expose that `asset_identity`, so the placement evidence names the exact registry identity used rather than only a filename or definition GUID.
+
+Contract 0.28 native acceptance verifies cryptographic placement end-to-end: wrong hash, missing/oversized/changed bytes, exact identity reuse, version drift, used-definition identity collision, save/reopen persistence, `make_unique` instance isolation and shared-definition geometry drift all fail/pass according to the strong identity contract. Verified asset evidence also resolves through CDT_Engineer's catalog resolver; mismatched SHA-256 is blocked. Capability metadata therefore records SketchUp `24.0.594` for these semantics.
 
 ### `texture_list()`
 
@@ -317,6 +343,12 @@ Strict model scene creation with exact-name semantics; duplicates fail as `alrea
 
 Rooted document lifecycle under the owner-local `models/` directory (beside the bridge credential and asset registry). Only plain file names are accepted — traversal, absolute paths, non-allowlisted extensions, and canonical-path escapes through symlinks/reparse points fail closed before I/O. `model_save` requires an existing path (`model_save_failed` otherwise — use `model_save_as`); `model_save_as` enforces `.skp` plus explicit overwrite (`model_already_exists` without it); `model_open` enforces existence, requires the active model to have no unsaved changes (`unsaved_model_changes`), and supports an optional stale-model GUID guard (`context_mismatch`); `model_export` supports `dae`/`kmz` through the model exporter and `png`/`jpg` through view image capture (raster exports accept optional pixel dimensions, default 1024×768). These file/application actions are machine-labeled `external_side_effect`: completion is verified, but no SketchUp transaction or rollback is claimed. `model_list` reports neutral file metadata.
 
+### `artifact_seal(file)` / `artifact_verify(file, sha256)`
+
+`artifact_seal` accepts only the saved active rooted SKP and creates a content-addressed accepted copy plus JSON manifest under the owner-local `accepted/` root. It hashes the source before and after copying, hashes the temporary copy, caps work at 1 GiB, uses atomic rename for new accepted files/manifests, and refuses unsaved or changing source state. Repeating a seal for identical bytes is replay-safe and verifies the existing content-addressed copy.
+
+`artifact_verify` checks the accepted copy/manifest, source SHA-256/size, active model identity and unsaved-change state. Mutation makes prior evidence stale; if a later save rewrites bytes, the old SHA-256 remains stale and a new seal receives a new content identity. Native contract-0.28 acceptance verifies seal, stale-after-mutation, reseal-after-byte-change and verify-after-reopen behavior.
+
 ### `integrity_report(unit?)`
 
 Read-only generic CAD integrity facts — never discipline conclusions: per-type entity counts, degenerate edges (zero-length, 1e-6 in threshold), non-manifold edges (3+ faces), raw-edge/face tag hygiene (off `Layer0`/`Untagged` defaults), invalid transforms, unused component definitions and materials, model complexity, and a total issue count. Scans are bounded (5000 active entities, definition walk capped) with an explicit truncation flag. Reversed-face detection is intentionally absent: orientation truth lives in solid context, not in a fact query.
@@ -344,6 +376,12 @@ Strict circle/arc loops built with native `add_circle`/`add_arc` inside a fresh 
 ### `create_polygon(center, normal, radius, sides)`
 
 Strict regular-polygon profile returning one Group containing the face plus its side edges (3..360 sides). Vertices are constructed deterministically on the explicit plane, then the face area is verified against the exact `sides/2·r²·sin(2π/sides)` formula and every vertex against the radius. `expect` pins `active_entity_delta = 1`, `Group` type, and exact side counts.
+
+### `create_mesh(name, points, faces, unit?)`
+
+Strict generic indexed-mesh creation for externally planned complex geometry. It creates exactly one isolated Group from 3..2048 unique vertices and 1..4096 polygon faces; each face has 3..16 unique in-range indexes and total index references are capped at 32768. Duplicate vertex coordinates, duplicate face vertex-sets, malformed indexes and budget overflow fail before commit. The strict expectation pins one created Group plus exact vertex/face counts; affected-set validation requires only the resulting Group to be created. Wrong semantic expectations abort with verified rollback.
+
+Native contract-0.28 evidence covers tetrahedron, frustum, four-section loft, ellipsoid, rounded closed profile and open curved molding/ribbon geometry, with measured topology/read-back, manifold/volume checks where applicable, malformed/budget negatives and forced rollback. Shape meaning/tessellation remains the external Domain Agent's responsibility; the executor only consumes the bounded indexed mesh.
 
 ### `sweep_profile(face_pid, path_pids)`
 
@@ -453,7 +491,7 @@ Strict material assignment against an existing material — unknown names fail a
 
 ## Active edit-context rule
 
-Mutation tools resolve by persistent ID and then require the entity parent to match the parent of `model.active_entities`. This prevents a request from mutating nested geometry outside the context currently open for editing.
+Strict action primitives still mutate only `model.active_entities`; entity guards continue requiring the target parent to match the active edit-context parent. Contract `0.26` does **not** bypass that rule. Instead, the generic `execute_geometry(..., target_context={instance_path:[...]})` path performs a bounded, validated native edit-context switch before the strict transaction, executes the unchanged action/guards in that context, and then attempts verified restoration of the caller context. Convenience tools without `target_context` retain the prior active-context-only behavior.
 
 ## Error behavior
 
@@ -492,6 +530,12 @@ The provider never returns fake success for a failed live action. Representative
 - `asset_not_found`
 - `asset_too_large`
 - `asset_path_escape`
+- `asset_registry_too_large`
+- `asset_identity_unverified`
+- `asset_changed_during_load`
+- `asset_definition_identity_mismatch`
+- `context_target_unavailable`
+- `context_restore_failed`
 - `texture_not_found`
 - `texture_too_large`
 - `texture_path_escape`
@@ -522,4 +566,4 @@ The provider never returns fake success for a failed live action. Representative
 
 ## Acceptance status
 
-Measured native acceptance on SketchUp 2024 `24.0.594` / Ruby `3.2.2` covers the live bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, Group/ComponentInstance delete, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control, rooted document lifecycle and CAD integrity with safe repair, including negative/rollback cases. The current provider exposes **64 MCP tools** at contract **`0.25`**. Contract 0.22 corrected safety honesty for document side effects and rooted paths; contract 0.23 added bounded topology closure/fingerprinting and topology-aware raw Edge/Face delete; contract 0.24 added guarded connected-face push/pull; contract 0.25 closes copy/array property-fidelity loss for material/tag/name/visibility/shadow state. The topology path from 0.23–0.24 and copy-fidelity path from 0.25 are natively accepted on SketchUp 2024 `24.0.594` / Ruby `3.2.2`. Contract 0.22 document/path safety remains a separate acceptance scope. See [Compatibility](COMPATIBILITY.md) for the supported-runtime claim.
+Measured native acceptance on SketchUp 2024 `24.0.594` / Ruby `3.2.2` is current through contract **`0.28`** and **67 MCP tools**. In addition to the established semantic-loop baseline, the measured gap matrix proves bounded three-level target-context mutation/restoration, cryptographic asset identity and CDT_Engineer resolver E2E, bounded indexed mesh realization/rollback/budget gates, exact manifold-solid clearance/overlap including rotated AABB false positives, non-manifold fail-closed behavior, uncertain-completion reconciliation + compensation, content-addressed artifact seal/staleness/reseal/reopen, and post-reopen instance-specific/shared-definition asset behavior. The public `runtime_versions` evidence for these capabilities therefore includes `24.0.594`; no other SketchUp major release is implied supported. See [Compatibility](COMPATIBILITY.md).

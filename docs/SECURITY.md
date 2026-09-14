@@ -26,7 +26,7 @@ Relative transform convenience calls do not have a separate native mutation auth
 
 Strict optimistic-concurrency guards prevent stale autonomous writes. `if_context` is a closed `{id, revision}` object and `if_match` is a lowercase SHA-256 semantic fingerprint. Context mismatch is evaluated before action preflight, and entity-state mismatch before `AI_Step`; neither failure opens a mutation transaction.
 
-Identity-sensitive mutations target SketchUp persistent IDs and active edit context. Strict mutations use a SketchUp operation transaction, semantic validation before commit and verified rollback on failure.
+Identity-sensitive mutations target SketchUp persistent IDs and active edit context. Nested targeting does not bypass that guard: `target_context.instance_path` is closed and bounded (1..32 Group/ComponentInstance PIDs), every member is resolved/revalidated and unlocked, and SketchUp must accept the resulting native `InstancePath` before the unchanged strict action runs. The bridge enters the target edit path before `AI_Step` and attempts verified caller-path restoration after the strict receipt, so edit-context navigation is not smuggled into the geometry transaction. Strict mutations continue to use semantic validation before commit and verified rollback on failure.
 
 A transport-level response is not considered proof that geometry is correct.
 
@@ -40,7 +40,7 @@ Strict object delete remains limited to unlocked active-context Groups and Compo
 
 ## Current bounded-work controls
 
-The current runtime includes limits for bridge frames, concurrent bridge clients, object scans, face point counts and semantic fingerprint complexity. Limits may evolve as performance is measured; `system_capabilities` and public tool documentation are the authoritative released surface.
+The current runtime includes limits for bridge frames, concurrent bridge clients, object scans, face point counts, semantic fingerprint complexity, nested-context depth, indexed-mesh vertices/faces/index references, exact-spatial triangulation/pair tests, registry hashing and artifact byte size. Limits may evolve as performance is measured; `system_capabilities` and public tool documentation are the authoritative released surface.
 
 ## Secrets
 
@@ -50,21 +50,29 @@ Bridge and MCP bearer credentials must never be returned by MCP tools or written
 
 Current released tools do not provide a raw arbitrary filesystem execution surface. Model files use an explicit owner-local `models/` root; component and texture assets use allowlisted registries. Plain-name/extension checks are combined with canonical `realpath` containment, including existing symlink/reparse targets and canonical parent checks for new output files, so an allowed-root entry that resolves outside the root fails closed.
 
+Component assets require registry `sha256` + `native_version`. The bridge hashes actual bytes, rechecks identity around native definition load, and binds the verified identity plus definition-geometry fingerprint to the resulting ComponentDefinition. A used loaded definition with mismatched identity fails closed. An unused unverified definition may be reloaded only after exact registry/file verification and post-load byte re-hash, then receives a fresh verified binding; filename/path equality alone is never accepted as identity. Asset listing/placement work is bounded by manifest-entry, per-file-size, and aggregate-hash budgets. Missing plain-name assets report `asset_not_found`, while traversal/symlink canonical escapes retain `asset_path_escape`.
+
+
+Artifact sealing is content-addressed rather than a mutable approval flag. `artifact_seal` requires the saved active rooted model, re-hashes source and temporary copy around the copy operation, writes an accepted `<sha256>.skp` plus manifest, and detects source changes during sealing. `artifact_verify` rejects unsaved mutation, source-byte drift, corrupt accepted copies/manifests and model-identity mismatch as stale/corrupt evidence.
+
 ## Fail-closed behavior
 
 Examples of states that must fail rather than silently continue include:
 
 - live SketchUp bridge unavailable;
 - active model unavailable;
-- unsupported or inactive edit context;
-- malformed/non-finite geometry input;
+- unsupported, stale, locked, or unverifiable target edit context;
+- malformed/non-finite geometry input or indexed mesh outside declared topology budgets;
 - non-invertible strict transformation;
 - invalid/non-manifold boolean operands;
 - semantic validation failure;
 - result semantic state exceeding configured bounds;
 - unverifiable rollback;
 - unsaved active model before `model_open`;
-- rooted file/asset target whose canonical path escapes its allowed root.
+- rooted file/asset target whose canonical path escapes its allowed root;
+- asset bytes/version that do not match registry identity, or loaded-definition identity that cannot be verified;
+- non-manifold operands for exact solid spatial queries or spatial work beyond declared triangle/pair budgets;
+- stale/corrupt artifact seals or an unsaved model presented as accepted evidence.
 
 ## Domain security boundary
 

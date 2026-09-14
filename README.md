@@ -2,8 +2,8 @@
 
 SketchUp-native MCP provider implementing a **Generic CAD Primitive / Execution Engine** with bounded native execution, semantic state and verified transactional mutation paths.
 
-> Current provider version: `0.1.0` · Contract: `0.25`
-> Measured native runtime: SketchUp 2024 `24.0.594` / Ruby `3.2.2`
+> Current provider version: `0.1.0` · Contract: `0.28`
+> Measured native runtime: SketchUp 2024 `24.0.594` / Ruby `3.2.2` for contract 0.28, including nested targeting, cryptographic asset identity, bounded indexed mesh, exact manifold-solid spatial queries, artifact sealing and recovery negatives.
 
 ## What it is
 
@@ -50,6 +50,8 @@ Read/system tools:
 - `model_open`
 - `model_export`
 - `model_list`
+- `artifact_seal`
+- `artifact_verify`
 - `integrity_report`
 - `repair_reverse_face`
 - `repair_erase_degenerate`
@@ -76,6 +78,7 @@ Strict Semantic State Loop surface:
 - `create_circle`
 - `create_arc`
 - `create_polygon`
+- `create_mesh`
 
 Current closed strict actions:
 
@@ -99,11 +102,14 @@ Current closed strict actions:
 - `create_circle`
 - `create_arc`
 - `create_polygon`
+- `create_mesh`
 - `sweep_profile`
 
 `delete_entity` remains the preferred strict object-deletion path for unlocked active-context Groups and ComponentInstances. Raw Edge/Face deletion uses `execute_geometry(action="delete_topology_entity")`; connected-face push/pull uses `execute_geometry(action="push_pull_topology_face")`. Both require a prior `topology_closure_fingerprint` from `query_topology`, recheck that closure before and inside `AI_Step`, and commit only when affected PID accounting stays inside the bounded pre/post topology contract. The topology additions in contracts `0.23`–`0.24` are now natively accepted on SketchUp 2024 `24.0.594` / Ruby `3.2.2`; document/path safety changes from `0.22` remain a separate acceptance scope.
 
-Contract `0.25` closes a copy-fidelity gap discovered by the townhouse stress test: `copy_entity`, `linear_array`, and `radial_array` now preserve generic instance-level appearance/classification properties (material, tag, name, hidden state and shadow flags) for Groups and ComponentInstances, and the strict receipt validation aborts if those properties do not survive duplication.
+Contract `0.25` closes a copy-fidelity gap discovered by the townhouse stress test: `copy_entity`, `linear_array`, and `radial_array` preserve generic instance-level appearance/classification properties (material, tag, name, hidden state and shadow flags) for Groups and ComponentInstances, and strict receipt validation aborts if those properties do not survive duplication.
+
+Contract `0.26` added bounded nested `instance_path` targeting and cryptographic `sha256 + native_version` asset identity. Contract `0.27` added the generic bounded `create_mesh` indexed-mesh primitive for externally planned complex geometry. Contract `0.28` adds exact manifold-solid surface clearance/overlap semantics to the existing measurement queries plus content-addressed `artifact_seal`/`artifact_verify`. All of these paths are now natively accepted on SketchUp 2024 `24.0.594` / Ruby `3.2.2`, including positive, fail-closed and verified-rollback/recovery cases. Component-definition edits remain shared unless the caller explicitly uses `make_unique`; asset reuse never trusts filename/path identity alone.
 
 Compatibility modeling tools currently also include edge/face/group creation, selection, delete, move/rotate/scale, push/pull, box component, tags and basic materials. These older mutation paths are not claimed equivalent to the strict pre-commit semantic-validation path; see the [Tool Guide](docs/TOOL_GUIDE.md).
 
@@ -136,7 +142,7 @@ Strict semantic tools no longer require clients to know SketchUp's native length
 
 The native bridge converts dimensional request values exactly once at its boundary, performs SketchUp operations in native inches, and converts semantic states/validation evidence back to the requested unit. `model` resolves to the active model's configured length unit and the receipt reports both `unit` and `resolved_unit`. Bounds/points/distances use the declared length unit, areas use its square, volumes its cube, and transformation matrix translations at indices 12–14 use the declared length unit; rotation/scale matrix terms remain unitless.
 
-Only active-edit-context coordinates are claimed today. Model/world coordinate input is rejected rather than silently transformed. Legacy compatibility mutation tools retain their documented internal-inch behavior until migrated.
+Only active-edit-context coordinates are claimed today. When `execute_geometry`/`place_asset` receives `target_context`, `active_context` means the local coordinate frame of that validated nested edit path; model/world coordinate input is still rejected rather than silently transformed. Legacy compatibility mutation tools retain their documented internal-inch behavior until migrated.
 
 ## Strict transform convenience tools
 
@@ -234,9 +240,9 @@ Offline tests:
 python -m unittest discover -s tests -v
 ```
 
-The current public tree automated suite is **202/202 PASS** on the measured Windows development environment.
+The current public tree automated suite is **210 PASS, 1 SKIP**. The skip is an environment-specific optional check and does not suppress contract coverage.
 
-Native acceptance has been measured on SketchUp 2024 for the baseline bridge plus strict box, face, isolated extrusion-to-group, absolute transform, manifold boolean, object delete, strict group composition, strict component/instance semantics, strict copy/array/mirror duplication, strict tag/material assignment, strict curve/polyline primitives, strict profile sweep, read-only measurement/topology queries, allowlisted asset placement, real-world texture scale, camera/scene control, rooted document lifecycle and CAD integrity with safe repair, including negative/rollback cases. The public HTTP MCP surface was live-smoked at contract `0.21` with 64 tools. Contract `0.22` corrected safety semantics for document I/O, error sanitization, rooted-path containment, and unsaved-model protection. Contract `0.23` added bounded topology closure plus topology-aware raw Edge/Face deletion; contract `0.24` added guarded connected-face push/pull under the same 64-tool MCP surface. The `0.23`–`0.24` topology path has now been natively exercised twice on fresh disposable SketchUp 2024 models, including connected closure discovery, successful connected push/pull, stale-fingerprint fail-closed behavior, and topology-aware raw delete. Contract `0.25` additionally natively verifies generic copy-property fidelity across direct copy, linear array, radial array and Group copy. Contract `0.22` document/path safety remains a separate native-acceptance scope.
+Native acceptance is current through contract `0.28` on SketchUp 2024 `24.0.594` / Ruby `3.2.2`. The public surface contains **67 MCP tools**. The measured 0.28 matrix covers nested three-level edits and context restoration, strong asset identity and exact-definition reuse/drift rejection, Engineer catalog-resolver integration, bounded mesh realization for tetra/frustum/multi-section loft/ellipsoid/rounded/open-molding cases, mesh budget/malformed-input fail-before-mutation and verified rollback, exact disjoint/touching/penetrating/rotated spatial queries, non-manifold rejection, uncertain-completion reconciliation and compensation, content-addressed artifact seal/staleness/reseal, save/reopen verification and instance-specific `make_unique` isolation. Earlier measured topology/copy/unit/texture/camera/scene/document/integrity paths remain part of the supported SketchUp-2024 baseline.
 
 `cdt-sketchup-doctor` provides offline and live health checks (`doctor`, `doctor --live`), extension install/uninstall, token repair, and a sanitized `support-bundle` that never includes credential material. The RBZ build is byte-reproducible (fixed archive metadata).
 

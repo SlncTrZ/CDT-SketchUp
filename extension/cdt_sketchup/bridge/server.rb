@@ -162,10 +162,79 @@ module CDTSketchUp
       }
     end
 
+    def run_targeted_geometry_in_context(model, params)
+      original_path = (model.active_path || []).dup
+      original_path_ids = original_path.map(&:persistent_id)
+      caller_snapshot = semantic_active_entity_snapshot(model)
+      caller_fingerprint = semantic_model_fingerprint(model, active_snapshot: caller_snapshot)
+      caller_context_before = receipt_context(model, model_fingerprint: caller_fingerprint)
+      validate_if_context(params["if_context"], caller_context_before) if params["if_context"]
+
+      target_path, target_path_ids = resolve_target_edit_context(model, params["target_context"])
+      inner_params = params.dup
+      inner_params.delete("target_context")
+      # if_context guards the caller context at dispatch time. The recursive strict
+      # execution captures and validates its own target-context pre-state.
+      inner_params.delete("if_context")
+
+      result = nil
+      execution_error = nil
+      restoration = nil
+      begin
+        activate_target_edit_context(model, target_path, target_path_ids) unless target_path_ids == original_path_ids
+        result = handle_execute_geometry(inner_params)
+      rescue BridgeError => error
+        execution_error = error
+      rescue StandardError => error
+        log("targeted geometry execution failed: #{error.class}: #{error.message}")
+        execution_error = BridgeError.new(
+          "geometry_execution_failed",
+          "Targeted SketchUp geometry execution failed"
+        )
+      ensure
+        restoration = restore_active_path(model, original_path)
+      end
+
+      if execution_error
+        unless restoration["verified"]
+          raise BridgeError.new(
+            "context_restore_failed",
+            "Targeted execution failed and the caller edit context could not be restored"
+          )
+        end
+        raise execution_error
+      end
+      unless result.is_a?(Hash)
+        raise BridgeError.new("geometry_execution_failed", "Targeted execution produced an invalid receipt")
+      end
+
+      caller_context_after = nil
+      if restoration["verified"]
+        restored_snapshot = semantic_active_entity_snapshot(model)
+        restored_fingerprint = semantic_model_fingerprint(model, active_snapshot: restored_snapshot)
+        caller_context_after = receipt_context(model, model_fingerprint: restored_fingerprint)
+      end
+      result["context_targeting"] = {
+        "target_instance_path" => target_path_ids,
+        "coordinate_space" => "active_context",
+        "edit_semantics" => "shared_definition",
+        "instance_specific_edit" => "make_unique_first",
+        "caller_context_before" => caller_context_before,
+        "execution_context_before" => result["context_before"],
+        "execution_context_after" => result["context"],
+        "restoration" => restoration,
+        "caller_context_after" => caller_context_after
+      }
+      result
+    end
+
     def handle_execute_geometry(params)
       started_at = monotonic_now
       receipt_id = SecureRandom.uuid
       model = require_model
+      if params.key?("target_context") && !params["target_context"].nil?
+        return run_targeted_geometry_in_context(model, params)
+      end
       action = params["action"]
       unit_info = resolve_public_unit(model, params["unit"] || "in")
       coordinate_space = validate_coordinate_space(params["coordinate_space"] || "active_context")

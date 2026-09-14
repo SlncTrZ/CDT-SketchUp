@@ -96,6 +96,28 @@ module CDTSketchUp
       ]
     end
 
+    def semantic_asset_identity(model, definition)
+      return nil unless model && definition && definition.respond_to?(:guid)
+
+      raw = model.get_attribute(ASSET_ATTRIBUTE_DICTIONARY, definition.guid.to_s, nil)
+      return nil unless raw.is_a?(String) && !raw.empty?
+      record = JSON.parse(raw)
+      values = ASSET_ATTRIBUTE_KEYS.each_with_object({}) do |key, result|
+        result[key] = record[key]
+      end
+      return nil unless values["asset_key"].is_a?(String) && !values["asset_key"].empty?
+      return nil unless values["sha256"].is_a?(String) && values["sha256"].match?(/\A[a-f0-9]{64}\z/)
+      return nil unless values["native_version"].is_a?(String) && !values["native_version"].empty?
+      geometry_fingerprint = record["geometry_fingerprint"]
+      return nil unless geometry_fingerprint.is_a?(String) && geometry_fingerprint.match?(/\A[a-f0-9]{64}\z/)
+      return nil unless semantic_definition_geometry_fingerprint(definition) == geometry_fingerprint
+
+      values
+    rescue JSON::ParserError, BridgeError, StandardError => error
+      log("asset semantic identity read failed: #{error.class}: #{error.message}")
+      nil
+    end
+
     def semantic_entity_state(model, entity)
       counts = semantic_geometry_counts(entity)
       bounds = semantic_bounds(entity)
@@ -120,7 +142,8 @@ module CDTSketchUp
                              {
                                "guid" => entity.definition.guid.to_s,
                                "name" => entity.definition.name.to_s,
-                               "geometry_fingerprint" => semantic_definition_geometry_fingerprint(entity.definition)
+                               "geometry_fingerprint" => semantic_definition_geometry_fingerprint(entity.definition),
+                               "asset_identity" => semantic_asset_identity(model, entity.definition)
                              }
                            end
       hierarchy = semantic_hierarchy(entity)
@@ -142,7 +165,8 @@ module CDTSketchUp
         "manifold" => manifold,
         "volume" => volume,
         "transformation" => transformation,
-        "hierarchy" => hierarchy
+        "hierarchy" => hierarchy,
+        "definition" => definition_summary
       }
 
       {
@@ -372,10 +396,12 @@ module CDTSketchUp
         nil
       end
       geometry_fingerprint = semantic_definition_geometry_fingerprint(definition)
+      asset_identity = semantic_asset_identity(model, definition)
       semantic_payload = {
         "guid" => definition.guid.to_s,
         "name" => definition.name.to_s,
-        "geometry_fingerprint" => geometry_fingerprint
+        "geometry_fingerprint" => geometry_fingerprint,
+        "asset_identity" => asset_identity
       }
       {
         "guid" => definition.guid.to_s,
@@ -391,6 +417,7 @@ module CDTSketchUp
           "face_count" => faces.length
         },
         "geometry_fingerprint" => geometry_fingerprint,
+        "asset_identity" => asset_identity,
         "active_context" => false,
         "semantic_fingerprint" => Digest::SHA256.hexdigest(JSON.generate(semantic_payload))
       }

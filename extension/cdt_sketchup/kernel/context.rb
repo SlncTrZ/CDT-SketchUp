@@ -57,6 +57,106 @@ module CDTSketchUp
       }
     end
 
+    def active_path_persistent_ids(model)
+      (model.active_path || []).map(&:persistent_id)
+    end
+
+    def resolve_target_edit_context(model, value)
+      unless value.is_a?(Hash)
+        raise BridgeError.new("invalid_argument", "target_context must be an object")
+      end
+      unknown = value.keys - TARGET_CONTEXT_KEYS
+      unless unknown.empty?
+        raise BridgeError.new(
+          "invalid_argument",
+          "target_context contains unsupported keys: #{unknown.sort.join(', ')}"
+        )
+      end
+      unless value.keys.sort == TARGET_CONTEXT_KEYS.sort
+        raise BridgeError.new("invalid_argument", "target_context requires instance_path")
+      end
+      raw_path = value["instance_path"]
+      unless raw_path.is_a?(Array) && raw_path.length.between?(1, MAX_CONTEXT_DEPTH)
+        raise BridgeError.new(
+          "invalid_argument",
+          "target_context.instance_path must contain 1..#{MAX_CONTEXT_DEPTH} persistent IDs"
+        )
+      end
+      persistent_ids = raw_path.each_with_index.map do |item, index|
+        bounded_integer(
+          item,
+          minimum: 1,
+          maximum: (2**63) - 1,
+          name: "target_context.instance_path[#{index}]"
+        )
+      end
+      if persistent_ids.uniq.length != persistent_ids.length
+        raise BridgeError.new("invalid_argument", "target_context.instance_path must not contain duplicates")
+      end
+
+      instances = persistent_ids.map do |persistent_id|
+        entity = require_entity_by_pid(model, persistent_id)
+        unless entity.is_a?(Sketchup::Group) || entity.is_a?(Sketchup::ComponentInstance)
+          raise BridgeError.new(
+            "unsupported_object_type",
+            "target_context.instance_path accepts only groups/component instances"
+          )
+        end
+        if entity.respond_to?(:locked?) && entity.locked?
+          raise BridgeError.new("locked_object", "target_context contains a locked instance")
+        end
+        entity
+      end
+
+      target_path = begin
+        Sketchup::InstancePath.new(instances)
+      rescue StandardError => error
+        log("target context resolution failed: #{error.class}: #{error.message}")
+        raise BridgeError.new("context_target_unavailable", "Target edit context is not a valid instance path")
+      end
+      unless target_path.respond_to?(:valid?) && target_path.valid?
+        raise BridgeError.new("context_target_unavailable", "Target edit context is not a valid instance path")
+      end
+      [target_path, persistent_ids]
+    end
+
+    def activate_target_edit_context(model, target_path, target_persistent_ids)
+      begin
+        model.active_path = target_path
+      rescue StandardError => error
+        log("target context activation failed: #{error.class}: #{error.message}")
+        raise BridgeError.new("context_target_unavailable", "SketchUp did not enter the target edit context")
+      end
+      unless active_path_persistent_ids(model) == target_persistent_ids
+        raise BridgeError.new("context_target_unavailable", "SketchUp entered an unexpected edit context")
+      end
+      true
+    end
+
+    def restore_active_path(model, original_path)
+      expected = original_path.map(&:persistent_id)
+      native_error = nil
+      begin
+        model.active_path = original_path.empty? ? nil : original_path
+      rescue StandardError => error
+        native_error = error
+        log("target context restoration failed: #{error.class}: #{error.message}")
+      end
+      actual = active_path_persistent_ids(model)
+      verified = native_error.nil? && actual == expected
+      {
+        "attempted" => true,
+        "verified" => verified,
+        "expected_active_path" => expected,
+        "actual_active_path" => actual,
+        "error" => verified ? nil : {
+          "kind" => "context_restore_failed",
+          "message" => "SketchUp did not restore the caller edit context",
+          "retryable" => false
+        }
+      }
+    end
+
     def validate_write_preconditions(model, action, action_params, if_context, if_match, current_context)
       validate_if_context(if_context, current_context) if if_context
       validate_if_match(model, action, action_params, if_match) if if_match

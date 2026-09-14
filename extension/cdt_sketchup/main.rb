@@ -37,6 +37,7 @@ require_relative "actions/scene"
 require_relative "actions/document"
 require_relative "queries/entity"
 require_relative "queries/topology"
+require_relative "queries/spatial"
 require_relative "queries/measurement"
 require_relative "queries/integrity"
 

@@ -51,7 +51,7 @@ class ExtensionSafetyTests(unittest.TestCase):
         self.assertIn("def canonical_contained_path", source)
         self.assertIn("File.realpath", source)
         self.assertIn("File.symlink?", source)
-        self.assertIn('canonical_contained_path(root, resolved, "asset_path_escape")', source)
+        self.assertIn('canonical_contained_path(root, resolved, "asset_path_escape", allow_missing: true)', source)
         self.assertIn('canonical_contained_path(root, resolved, "texture_path_escape")', source)
         self.assertIn('canonical_contained_path(root, resolved, "model_path_escape"', source)
 
