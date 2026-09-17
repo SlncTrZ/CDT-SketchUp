@@ -1,5 +1,5 @@
 # cdt_sketchup/queries/spatial.rb — bounded exact solid relation and surface clearance
-# Wing: code | Topic: sketchup_bridge | Updated: 2026-09-14
+# Wing: code | Topic: sketchup_bridge | Updated: 2026-09-17
 
 module CDTSketchUp
   class BridgeServer
@@ -7,6 +7,8 @@ module CDTSketchUp
 
     SPATIAL_EPSILON = 1e-7
     SPATIAL_EPSILON_SQ = SPATIAL_EPSILON * SPATIAL_EPSILON
+    # Must clear the surface epsilon while remaining tiny relative to normal CAD features.
+    SPATIAL_INTERIOR_PROBE_OFFSET = SPATIAL_EPSILON * 32.0
     SPATIAL_RAY_DIRECTIONS = [
       [1.0, 0.371, 0.529],
       [0.293, 1.0, 0.617],
@@ -362,15 +364,29 @@ module CDTSketchUp
       votes >= 2
     end
 
+    def spatial_triangle_centroid(triangle)
+      [
+        (triangle[0][0] + triangle[1][0] + triangle[2][0]) / 3.0,
+        (triangle[0][1] + triangle[1][1] + triangle[2][1]) / 3.0,
+        (triangle[0][2] + triangle[1][2] + triangle[2][2]) / 3.0
+      ]
+    end
+
+    def spatial_triangle_unit_normal(triangle)
+      edge1 = spatial_subtract(triangle[1], triangle[0])
+      edge2 = spatial_subtract(triangle[2], triangle[0])
+      normal = spatial_cross(edge1, edge2)
+      length_sq = spatial_length_sq(normal)
+      return nil if length_sq <= SPATIAL_EPSILON_SQ
+
+      spatial_scale(normal, 1.0 / Math.sqrt(length_sq))
+    end
+
     def spatial_sample_points(triangles)
       samples = []
       triangles.each do |triangle|
         samples << triangle[0]
-        samples << [
-          (triangle[0][0] + triangle[1][0] + triangle[2][0]) / 3.0,
-          (triangle[0][1] + triangle[1][1] + triangle[2][1]) / 3.0,
-          (triangle[0][2] + triangle[1][2] + triangle[2][2]) / 3.0
-        ]
+        samples << spatial_triangle_centroid(triangle)
         break if samples.length >= MAX_SPATIAL_SAMPLE_POINTS
       end
       samples
@@ -379,6 +395,24 @@ module CDTSketchUp
     def spatial_mesh_has_inside_sample?(candidate_triangles, container_triangles)
       spatial_sample_points(candidate_triangles).any? do |point|
         spatial_point_inside_mesh?(point, container_triangles)
+      end
+    end
+
+    def spatial_mesh_has_shared_interior_probe?(candidate_triangles, container_triangles)
+      candidate_triangles.first(MAX_SPATIAL_SAMPLE_POINTS).any? do |triangle|
+        normal = spatial_triangle_unit_normal(triangle)
+        next false unless normal
+
+        centroid = spatial_triangle_centroid(triangle)
+        offset = spatial_scale(normal, SPATIAL_INTERIOR_PROBE_OFFSET)
+        probes = [
+          spatial_add(centroid, offset),
+          spatial_subtract(centroid, offset)
+        ]
+        probes.any? do |probe|
+          spatial_point_inside_mesh?(probe, candidate_triangles) &&
+            spatial_point_inside_mesh?(probe, container_triangles)
+        end
       end
     end
 
@@ -398,6 +432,11 @@ module CDTSketchUp
       first_inside_second = spatial_mesh_has_inside_sample?(first_triangles, second_triangles)
       second_inside_first = spatial_mesh_has_inside_sample?(second_triangles, first_triangles)
       penetrating = proper_crossing || first_inside_second || second_inside_first
+      if touching_surface && !penetrating
+        penetrating =
+          spatial_mesh_has_shared_interior_probe?(first_triangles, second_triangles) ||
+          spatial_mesh_has_shared_interior_probe?(second_triangles, first_triangles)
+      end
       touching = touching_surface && !penetrating
       relationship = if penetrating
                        "penetrating"
