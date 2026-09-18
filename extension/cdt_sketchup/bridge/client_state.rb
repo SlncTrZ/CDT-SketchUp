@@ -11,5 +11,11 @@ module CDTSketchUp
     rescue IOError, SystemCallError
       nil
     end
+
+    def reject_client(socket)
+      socket.close unless socket.closed?
+    rescue IOError, SystemCallError
+      nil
+    end
   end
 end

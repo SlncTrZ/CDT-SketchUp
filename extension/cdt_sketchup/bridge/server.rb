@@ -86,6 +86,10 @@ module CDTSketchUp
         socket = @server.accept_nonblock(exception: false)
         break if socket == :wait_readable
 
+        if @clients.size >= MAX_CLIENTS
+          reject_client(socket)
+          next
+        end
         @clients[socket] = {
           input: +"".b,
           output: +"".b,
