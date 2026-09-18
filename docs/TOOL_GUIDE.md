@@ -282,6 +282,8 @@ Read-only connectivity facts for one entity: bounded connected PID set (500 max,
 
 Read-only exact relation for two distinct manifold Group/ComponentInstance solids. Bounding-box overlap/box facts remain as broad-phase evidence, while the authoritative relation is derived from bounded native-face triangulation and reports `disjoint`, `touching`, or `penetrating`; a rotated-solid acceptance case proves that AABB overlap alone does not create a false collision. `clearance` is exact surface clearance for disjoint operands and zero for touching/penetrating operands. Non-manifold inputs fail as `non_manifold_operand`; no intersection geometry is created.
 
+> **Resolution bound (measured 18.09.2026, `472a2c3`, SU 24.0.594):** relations are exact for separations and interferences at or above the surface epsilon `1e-7` native inches. Sub-epsilon interference (e.g. a 5e-8in overlap, ~1nm) reports as `touching` with zero clearance — it is never reported as clear, but `overlap=false` must not be read as proof of zero shared volume below `1e-7`in. Native matrix: 11/12 with the single deviation exactly this bound.
+
 ### `asset_list()`
 
 Read-only listing of the owner-curated component asset registry. Contract `0.26` makes registry identity cryptographic rather than filename-only: each `assets.json` entry must provide a plain `.skp` `file`, a lowercase 64-hex `sha256` for the exact file bytes, and a non-empty `native_version` owned by the catalog/release process; `name` remains optional display metadata. `native_version` is an asset/catalog version, not the SketchUp runtime version.
