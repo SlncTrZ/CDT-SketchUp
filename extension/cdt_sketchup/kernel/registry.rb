@@ -11,6 +11,7 @@ module CDTSketchUp
       "object_list" => :handle_object_list,
       "object_get" => :handle_object_get,
       "execute_geometry" => :handle_execute_geometry,
+      "mutation_reconcile" => :handle_mutation_reconcile,
       "get_entity_state" => :handle_get_entity_state,
       "definition_info" => :handle_definition_info,
       "measure_distance" => :handle_measure_distance,

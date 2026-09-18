@@ -22,7 +22,10 @@ module CDTSketchUp
       unit_info:,
       coordinate_space:,
       context_before:,
-      context:
+      context:,
+      mutation_info: nil,
+      idempotent: false,
+      journal_status: "not_journaled"
     )
       before_model = receipt_model_state(before_count, before_fingerprint)
       after_model = receipt_model_state(after_count, after_fingerprint)
@@ -56,7 +59,10 @@ module CDTSketchUp
         "rollback" => nil,
         "error" => nil,
         "duration_ms" => receipt_duration_ms(started_at),
-        "limits" => receipt_limits
+        "limits" => receipt_limits,
+        "mutation" => mutation_info,
+        "idempotent" => idempotent,
+        "journal_status" => journal_status
       }
 
       # Contract 0.9 compatibility aliases; receipt fields above are authoritative.
@@ -107,7 +113,10 @@ module CDTSketchUp
       unit_info:,
       coordinate_space:,
       validation: nil,
-      error: nil
+      error: nil,
+      mutation_info: nil,
+      idempotent: false,
+      journal_status: "not_journaled"
     )
       rolled_back_count = model.active_entities.length
       rolled_back_snapshot, rollback_snapshot_error = safe_semantic_active_entity_snapshot(model)
@@ -169,6 +178,9 @@ module CDTSketchUp
         "error" => error,
         "duration_ms" => receipt_duration_ms(started_at),
         "limits" => receipt_limits,
+        "mutation" => mutation_info,
+        "idempotent" => idempotent,
+        "journal_status" => journal_status,
         # Contract 0.9 compatibility aliases.
         "rolled_back" => !!aborted,
         "rollback_verified" => rollback_verified,

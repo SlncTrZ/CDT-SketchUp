@@ -24,6 +24,7 @@ module CDTSketchUp
       @clients = {}
       @token = nil
       @process_session_id = SecureRandom.hex(16)
+      @mutation_journal = {}
     end
 
     def running?
@@ -242,6 +243,8 @@ module CDTSketchUp
       action = params["action"]
       unit_info = resolve_public_unit(model, params["unit"] || "in")
       coordinate_space = validate_coordinate_space(params["coordinate_space"] || "active_context")
+      replay = mutation_check(params, model)
+      return replay unless replay.nil?
       action_params, expect = normalize_geometry_request_units(
         action,
         params["params"],
@@ -309,31 +312,40 @@ module CDTSketchUp
           aborted = model.abort_operation
           operation_open = false
           compensate_non_undoable_action(model, action, action_metadata)
-          return build_rollback_result(
-            model,
-            receipt_id: receipt_id,
-            started_at: started_at,
-            action: action,
-            aborted: aborted,
-            before_count: before_count,
-            before_fingerprint: before_fingerprint,
-            before_snapshot: before_snapshot,
-            validation: validation,
-            unit_info: unit_info,
-            coordinate_space: coordinate_space
+          return journalize_mutation(
+            params, model,
+            "rolled_back",
+            build_rollback_result(
+              model,
+              receipt_id: receipt_id,
+              started_at: started_at,
+              action: action,
+              aborted: aborted,
+              before_count: before_count,
+              before_fingerprint: before_fingerprint,
+              before_snapshot: before_snapshot,
+              validation: validation,
+              unit_info: unit_info,
+              coordinate_space: coordinate_space
+            )
           )
         end
 
         after_fingerprint = semantic_model_fingerprint(model, active_snapshot: after_snapshot)
         committed = model.commit_operation
         unless committed
+          journalize_mutation(params, model, "unknown_commit", nil,
+                              before_fingerprint, nil)
           raise BridgeError.new(
             "transaction_commit_failed",
             "SketchUp did not commit AI_Step transaction"
           )
         end
         operation_open = false
-        build_operation_receipt(
+        journalize_mutation(
+          params, model,
+          "committed",
+          build_operation_receipt(
           model,
           receipt_id: receipt_id,
           started_at: started_at,
@@ -349,11 +361,15 @@ module CDTSketchUp
           coordinate_space: coordinate_space,
           context_before: pre_context,
           context: receipt_context(model, model_fingerprint: after_fingerprint)
+          )
         )
       rescue BridgeError => error
         aborted = operation_open ? model.abort_operation : false
         operation_open = false
-        build_rollback_result(
+        journalize_mutation(
+          params, model,
+          "rolled_back",
+          build_rollback_result(
           model,
           receipt_id: receipt_id,
           started_at: started_at,
@@ -369,12 +385,13 @@ module CDTSketchUp
             "message" => error.message,
             "retryable" => false
           }
+          )
         )
       rescue StandardError => error
         aborted = operation_open ? model.abort_operation : false
         operation_open = false
         log("execute_geometry failed: #{error.class}: #{error.message}")
-        build_rollback_result(
+        unexpected = build_rollback_result(
           model,
           receipt_id: receipt_id,
           started_at: started_at,
@@ -390,6 +407,11 @@ module CDTSketchUp
             "message" => "SketchUp geometry execution failed",
             "retryable" => false
           }
+        )
+        journalize_mutation(
+          params, model,
+          unexpected["rollback_verified"] ? "rolled_back" : "unknown_commit",
+          unexpected
         )
       ensure
         model.abort_operation if operation_open

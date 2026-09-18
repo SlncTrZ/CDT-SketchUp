@@ -21,6 +21,7 @@ require_relative "kernel/semantic_state"
 require_relative "kernel/fingerprints"
 require_relative "kernel/expectations"
 require_relative "kernel/receipts"
+require_relative "kernel/mutation_journal"
 require_relative "bridge/server"
 require_relative "bridge/protocol"
 require_relative "bridge/auth"
@@ -40,6 +41,7 @@ require_relative "queries/topology"
 require_relative "queries/spatial"
 require_relative "queries/measurement"
 require_relative "queries/integrity"
+require_relative "queries/recovery"
 
   unless file_loaded?(__FILE__)
     @bridge_server = BridgeServer.new

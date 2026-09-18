@@ -8,7 +8,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -19,6 +19,8 @@ from cdt_sketchup.server import (  # noqa: E402
     create_app,
     mcp,
 )
+
+MUTATION_ANY = {"id": ANY, "request_hash": ANY}
 
 
 class MCPServerTests(unittest.IsolatedAsyncioTestCase):
@@ -141,6 +143,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "create_box",
                 "params": {
                     "name": "AI_BOX",
@@ -187,6 +190,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "create_box",
                 "params": {"name": "MM_BOX", "dimensions": [25.4, 50.8, 76.2], "origin": [0.0, 0.0, 0.0]},
                 "expect": {"active_entity_delta": 1, "type": "ComponentInstance", "bounds_size": [25.4, 50.8, 76.2], "manifold": True},
@@ -300,6 +304,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 transformed = await client.call_tool("transform_entity", {"persistent_id": 77, "matrix": matrix})
         self.assertFalse(transformed.is_error)
         call.assert_awaited_once_with("execute_geometry", {
+            "mutation": MUTATION_ANY,
             "action": "transform_entity",
             "params": {"persistent_id": 77, "matrix": matrix},
             "expect": {"active_entity_delta": 0, "transformation": matrix},
@@ -313,6 +318,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 booleaned = await client.call_tool("boolean_operation", {"tool_pid": 11, "target_pid": 22, "operation_type": "difference"})
         self.assertFalse(booleaned.is_error)
         call.assert_awaited_once_with("execute_geometry", {
+            "mutation": MUTATION_ANY,
             "action": "boolean_operation",
             "params": {"tool_pid": 11, "target_pid": 22, "operation_type": "difference"},
             "expect": {"active_entity_delta": -1, "type": "Group", "manifold": True},
@@ -326,6 +332,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 deleted = await client.call_tool("delete_entity", {"persistent_id": 77})
         self.assertFalse(deleted.is_error)
         call.assert_awaited_once_with("execute_geometry", {
+            "mutation": MUTATION_ANY,
             "action": "delete_entity",
             "params": {"persistent_id": 77},
             "expect": {"active_entity_delta": -1, "deleted": True},
@@ -366,6 +373,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "group_entities",
                 "params": {"persistent_ids": [11, 12], "name": "Grouped"},
                 "expect": {
@@ -399,6 +407,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "create_component",
                 "params": {"persistent_ids": [11, 12], "name": "Composed"},
                 "expect": {
@@ -426,6 +435,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "place_instance",
                 "params": {"definition_guid": "g" * 32, "matrix": matrix},
                 "expect": {
@@ -453,6 +463,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "make_unique",
                 "params": {"persistent_id": 77},
                 "expect": {"active_entity_delta": 0, "type": "ComponentInstance"},
@@ -637,6 +648,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "create_polyline",
                 "params": {"points": points, "closed": False},
                 "expect": {"active_entity_delta": 1, "type": "Group", "edge_count": 2, "vertex_count": 3},
@@ -658,6 +670,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "create_rectangle",
                 "params": {"origin": [0.0, 0.0, 0.0], "width": 10.0, "height": 20.0, "normal": [0.0, 0.0, 1.0]},
                 "expect": {"active_entity_delta": 1, "type": "Group", "edge_count": 4, "vertex_count": 4},
@@ -678,6 +691,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "create_circle",
                 "params": {"center": [0.0, 0.0, 0.0], "normal": [0.0, 0.0, 1.0], "radius": 5.0, "segments": 24},
                 "expect": {"active_entity_delta": 1, "type": "Group", "edge_count": 24},
@@ -699,6 +713,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "create_arc",
                 "params": {"center": [0.0, 0.0, 0.0], "normal": [0.0, 0.0, 1.0], "radius": 5.0,
                            "start_degrees": 0.0, "end_degrees": 90.0, "segments": 12},
@@ -771,6 +786,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             strict[1],
             {
+                "mutation": MUTATION_ANY,
                 "action": "sweep_profile",
                 "params": {"face_pid": 11, "path_pids": [12]},
                 "expect": {"active_entity_delta": -5, "type": "Group", "manifold": True},
@@ -844,6 +860,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             strict[1],
             {
+                "mutation": MUTATION_ANY,
                 "action": "place_asset",
                 "params": {"asset_key": "farmhouse", "matrix": matrix},
                 "expect": {
@@ -908,6 +925,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "material_apply_texture",
                 "params": {"material": "Brick", "texture_key": "brick", "width": 1016.0, "height": 508.0},
                 "expect": {"active_entity_delta": 0, "material": "Brick"},
@@ -949,6 +967,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "camera_set",
                 "params": {"eye": [0.0, 0.0, 100.0], "target": [0.0, 0.0, 0.0],
                            "up": [0.0, 1.0, 0.0], "fov": 35.0},
@@ -977,6 +996,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "scene_create",
                 "params": {"name": "View A"},
                 "expect": {"active_entity_delta": 0, "scene_name": "View A"},
@@ -1115,6 +1135,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
         call.assert_awaited_once_with(
             "execute_geometry",
             {
+                "mutation": MUTATION_ANY,
                 "action": "group_entities",
                 "params": {"persistent_ids": [11, 12], "name": "Grouped"},
                 "expect": {

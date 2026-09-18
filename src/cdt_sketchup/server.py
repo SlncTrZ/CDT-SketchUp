@@ -13,6 +13,7 @@ from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
 from .bridge import BridgeClient, BridgeProtocolError, BridgeUnavailableError
+from .mutation import mutation_envelope, new_mutation_id
 from .contract import (
     PROVIDER_NAME,
     PROVIDER_VERSION,
@@ -55,8 +56,12 @@ def _error(kind: str, message: str, *, retryable: bool) -> dict[str, Any]:
 
 
 async def _call_bridge(command: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = dict(params) if params else {}
+    if (command == "execute_geometry" and isinstance(body.get("action"), str)
+            and "mutation" not in body):
+        body["mutation"] = mutation_envelope(new_mutation_id(), body)
     try:
-        return await _bridge.call(command, params)
+        return await _bridge.call(command, body if params is not None else None)
     except BridgeUnavailableError:
         return _error(
             "live_bridge_unavailable",
