@@ -31,7 +31,7 @@ class ContractTests(unittest.TestCase):
     def test_provider_identity_is_stable(self) -> None:
         self.assertEqual(PROVIDER_ID, "cdt_sketchup")
         self.assertEqual(PROVIDER_VERSION, "0.1.0")
-        self.assertEqual(CONTRACT_VERSION, "0.28")
+        self.assertEqual(CONTRACT_VERSION, "0.29")
         self.assertEqual(COMMON_CONTRACT_VERSION, "0.1")
         self.assertEqual(SKETCHUP_EXTENSION_VERSION, "0.1")
 
@@ -162,6 +162,14 @@ class ContractTests(unittest.TestCase):
     def test_capability_metadata_v2_separates_preferred_and_legacy_paths(self) -> None:
         payload = build_capabilities(bridge_connected=True, live_model=True)
         by_tool = {row["tool"]: row for row in payload["capabilities"]}
+        self.assertEqual(
+            by_tool["execute_geometry"]["identity_semantics"],
+            "caller_operation_id_optional_action_defined",
+        )
+        self.assertEqual(
+            by_tool["execute_geometry"]["idempotence"],
+            "bounded_journal_replay_when_operation_id_supplied",
+        )
         self.assertEqual(by_tool["transform_entity"]["safety_class"], "strict_mutation")
         self.assertTrue(by_tool["transform_entity"]["rollback_verified"])
         self.assertEqual(by_tool["object_move"]["safety_class"], "strict_mutation")

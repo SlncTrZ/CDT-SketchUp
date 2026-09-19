@@ -51,6 +51,50 @@ class BridgeClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(received["token"], "a" * 64)
         self.assertNotIn("code", received)
 
+    async def test_wire_request_id_remains_distinct_from_stable_mutation_id(self) -> None:
+        received: list[dict[str, object]] = []
+
+        async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            request = json.loads((await reader.readline()).decode("utf-8"))
+            received.append(request)
+            response = {
+                "protocol": 1,
+                "request_id": request["request_id"],
+                "ok": True,
+                "result": {"accepted": True},
+            }
+            writer.write(json.dumps(response).encode("utf-8") + b"\n")
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            token_path = Path(temp_dir) / "bridge.token"
+            token_path.write_text("c" * 64, encoding="utf-8")
+            client = BridgeClient(port=port, token_path=token_path)
+            params = {
+                "action": "create_box",
+                "mutation": {
+                    "id": "ab" * 16,
+                    "request_hash": "cd" * 32,
+                },
+            }
+            try:
+                await client.call("execute_geometry", params)
+                await client.call("execute_geometry", params)
+            finally:
+                server.close()
+                await server.wait_closed()
+
+        self.assertEqual(len(received), 2)
+        self.assertNotEqual(received[0]["request_id"], received[1]["request_id"])
+        self.assertEqual(
+            received[0]["params"]["mutation"]["id"],
+            received[1]["params"]["mutation"]["id"],
+        )
+
     async def test_probe_is_degraded_when_bridge_is_absent(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             token_path = Path(temp_dir) / "bridge.token"

@@ -13,7 +13,7 @@ from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
 from .bridge import BridgeClient, BridgeProtocolError, BridgeUnavailableError
-from .mutation import mutation_envelope, new_mutation_id
+from .mutation import mutation_envelope, new_mutation_id, valid_mutation_id
 from .contract import (
     PROVIDER_NAME,
     PROVIDER_VERSION,
@@ -55,11 +55,19 @@ def _error(kind: str, message: str, *, retryable: bool) -> dict[str, Any]:
     }
 
 
-async def _call_bridge(command: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+async def _call_bridge(
+    command: str,
+    params: dict[str, Any] | None = None,
+    *,
+    mutation_id: str | None = None,
+) -> dict[str, Any]:
     body = dict(params) if params else {}
+    if mutation_id is not None and command != "execute_geometry":
+        raise ValueError("mutation_id is only valid for execute_geometry")
     if (command == "execute_geometry" and isinstance(body.get("action"), str)
             and "mutation" not in body):
-        body["mutation"] = mutation_envelope(new_mutation_id(), body)
+        chosen_id = mutation_id if mutation_id is not None else new_mutation_id()
+        body["mutation"] = mutation_envelope(chosen_id, body)
     try:
         return await _bridge.call(command, body if params is not None else None)
     except BridgeUnavailableError:
@@ -204,8 +212,9 @@ async def execute_geometry(
     if_context: dict[str, str] | None = None,
     if_match: str | dict[str, str] | None = None,
     target_context: dict[str, Any] | None = None,
+    operation_id: str | None = None,
 ) -> dict[str, Any]:
-    """Execute one closed action, optionally inside a bounded nested instance path."""
+    """Execute one closed action with optional caller-stable retry identity."""
     unit = validate_public_unit(unit)
     coordinate_space = validate_coordinate_space(coordinate_space)
     payload: dict[str, Any] = {
@@ -221,7 +230,13 @@ async def execute_geometry(
         payload["if_match"] = if_match
     if target_context is not None:
         payload["target_context"] = target_context
-    return await _call_bridge("execute_geometry", payload)
+    if operation_id is not None and not valid_mutation_id(operation_id):
+        raise ValueError("operation_id must be lowercase hex32")
+    return await _call_bridge(
+        "execute_geometry",
+        payload,
+        mutation_id=operation_id,
+    )
 
 
 @mcp.tool()

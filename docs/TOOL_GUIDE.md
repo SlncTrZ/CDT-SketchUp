@@ -1,6 +1,6 @@
 # CDT-SketchUp Tool Guide
 
-> Status: contract 0.28 · measured native acceptance on SketchUp 2024 `24.0.594` / Ruby `3.2.2` · 67 public MCP tools · Updated: 2026-09-14
+> Status: source contract 0.29 · measured native acceptance through contract 0.28 on SketchUp 2024 `24.0.594` / Ruby `3.2.2` · 67 public MCP tools · Updated: 2026-09-19
 
 ## Runtime model
 
@@ -127,9 +127,13 @@ The adapter converts to native inches once before `AI_Step`; semantic extraction
 
 ## Strict Semantic State Loop
 
-### `execute_geometry(action, params, expect, target_context?)`
+### `execute_geometry(action, params, expect, target_context?, operation_id?)`
 
 Executes one closed geometry action inside `model.start_operation("AI_Step", true)`. Contract `0.26` optionally accepts `target_context={"instance_path":[...]}` to execute the same closed action inside a bounded nested edit context without exposing arbitrary Ruby or an unrestricted context-navigation API.
+
+`operation_id` is an optional caller-owned lowercase 32-hex logical operation identity. A caller that needs retry/reconnect correlation generates it once and reuses the **same ID only for the identical logical request**. The provider maps it to native `mutation.id`; the bridge still creates a fresh wire `request_id` for every connection. The mutation hash binds action, payload, target context and stale-state guards, so reusing one ID with changed logical content is rejected by the native journal.
+
+The current replay guarantee is deliberately bounded by the in-process native journal. An omitted `operation_id` preserves the existing one-shot behavior with an internally generated identity. A supplied ID is **not** permission for blind automatic retry after ambiguous completion: journal restart/expiry and definitive public reconciliation remain part of the recovery gate. Until that gate is closed, callers must treat uncertain completion as uncertain rather than assume `not_started`.
 
 `instance_path` contains 1..32 persistent IDs from outermost to innermost Group/ComponentInstance. The native bridge resolves every PID, rejects duplicates and locked/invalid paths, constructs a native `Sketchup::InstancePath`, enters it **before** starting `AI_Step`, and restores the caller edit path after the inner strict operation finishes. This ordering is intentional: changing SketchUp's active edit context is not treated as part of the mutation transaction. Invalid/stale nesting fails before mutation as `context_target_unavailable`.
 

@@ -172,6 +172,69 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
             {"persistent_id": 77, "unit": "in", "coordinate_space": "active_context"},
         )
 
+    async def test_execute_geometry_schema_exposes_operation_id(self) -> None:
+        async with Client(mcp, raise_exceptions=True) as client:
+            tools = await client.list_tools()
+        execute = next(tool for tool in tools.tools if tool.name == "execute_geometry")
+        self.assertIn("operation_id", execute.input_schema["properties"])
+        self.assertNotIn("operation_id", execute.input_schema.get("required", []))
+
+    async def test_execute_geometry_reuses_caller_operation_id_across_calls(self) -> None:
+        call = AsyncMock(return_value={"committed": True})
+        operation_id = "ab" * 16
+        args = {
+            "action": "create_box",
+            "params": {
+                "name": "RETRY_BOX",
+                "dimensions": [1.0, 2.0, 3.0],
+                "origin": [0.0, 0.0, 0.0],
+            },
+            "expect": {
+                "active_entity_delta": 1,
+                "type": "ComponentInstance",
+            },
+            "operation_id": operation_id,
+        }
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                first = await client.call_tool("execute_geometry", args)
+                second = await client.call_tool("execute_geometry", args)
+        self.assertFalse(first.is_error)
+        self.assertFalse(second.is_error)
+        self.assertEqual(call.await_count, 2)
+        first_payload = call.await_args_list[0].args[1]
+        second_payload = call.await_args_list[1].args[1]
+        self.assertEqual(first_payload["mutation"]["id"], operation_id)
+        self.assertEqual(second_payload["mutation"]["id"], operation_id)
+        self.assertEqual(
+            first_payload["mutation"]["request_hash"],
+            second_payload["mutation"]["request_hash"],
+        )
+        self.assertNotIn("operation_id", first_payload)
+
+    async def test_execute_geometry_rejects_invalid_operation_id_before_bridge(self) -> None:
+        call = AsyncMock()
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=False) as client:
+                result = await client.call_tool(
+                    "execute_geometry",
+                    {
+                        "action": "create_box",
+                        "params": {
+                            "name": "BAD_ID",
+                            "dimensions": [1.0, 1.0, 1.0],
+                            "origin": [0.0, 0.0, 0.0],
+                        },
+                        "expect": {
+                            "active_entity_delta": 1,
+                            "type": "ComponentInstance",
+                        },
+                        "operation_id": "not-a-valid-operation-id",
+                    },
+                )
+        self.assertTrue(result.is_error)
+        call.assert_not_awaited()
+
     async def test_strict_dimensional_tools_forward_explicit_units_and_coordinate_space(self) -> None:
         call = AsyncMock(return_value={"receipt_schema_version": 1, "committed": True})
         with patch("cdt_sketchup.server._bridge.call", call):

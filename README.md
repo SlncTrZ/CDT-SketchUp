@@ -2,8 +2,9 @@
 
 SketchUp-native MCP provider implementing a **Generic CAD Primitive / Execution Engine** with bounded native execution, semantic state and verified transactional mutation paths.
 
-> Current provider version: `0.1.0` · Contract: `0.28`
-> Measured native runtime: SketchUp 2024 `24.0.594` / Ruby `3.2.2` for contract 0.28, including nested targeting, cryptographic asset identity, bounded indexed mesh, exact manifold-solid spatial queries, artifact sealing and recovery negatives.
+> Current provider version: `0.1.0` · Contract: `0.29`
+> Measured native acceptance remains through contract `0.28` on SketchUp 2024 `24.0.594` / Ruby `3.2.2`; source contract `0.29` adds caller-stable operation identity and is pending fresh native recovery acceptance.
+> Retry-sensitive callers use generic `execute_geometry(operation_id=...)`; convenience wrappers remain one-shot and do not promise caller-stable retry identity.
 
 ## What it is
 
@@ -109,7 +110,7 @@ Current closed strict actions:
 
 Contract `0.25` closes a copy-fidelity gap discovered by the townhouse stress test: `copy_entity`, `linear_array`, and `radial_array` preserve generic instance-level appearance/classification properties (material, tag, name, hidden state and shadow flags) for Groups and ComponentInstances, and strict receipt validation aborts if those properties do not survive duplication.
 
-Contract `0.26` added bounded nested `instance_path` targeting and cryptographic `sha256 + native_version` asset identity. Contract `0.27` added the generic bounded `create_mesh` indexed-mesh primitive for externally planned complex geometry. Contract `0.28` adds exact manifold-solid surface clearance/overlap semantics to the existing measurement queries plus content-addressed `artifact_seal`/`artifact_verify`. All of these paths are now natively accepted on SketchUp 2024 `24.0.594` / Ruby `3.2.2`, including positive, fail-closed and verified-rollback/recovery cases. Component-definition edits remain shared unless the caller explicitly uses `make_unique`; asset reuse never trusts filename/path identity alone.
+Contract `0.26` added bounded nested `instance_path` targeting and cryptographic `sha256 + native_version` asset identity. Contract `0.27` added the generic bounded `create_mesh` indexed-mesh primitive for externally planned complex geometry. Contract `0.28` adds exact manifold-solid surface clearance/overlap semantics to the existing measurement queries plus content-addressed `artifact_seal`/`artifact_verify`. Those paths are natively accepted on SketchUp 2024 `24.0.594` / Ruby `3.2.2`, including positive, fail-closed and verified-rollback/recovery cases. Contract `0.29` adds optional caller-owned `execute_geometry.operation_id`, mapped to native mutation identity while wire request correlation remains per connection; this additive recovery path is source/offline verified and still pending fresh native acceptance. Component-definition edits remain shared unless the caller explicitly uses `make_unique`; asset reuse never trusts filename/path identity alone.
 
 Compatibility modeling tools currently also include edge/face/group creation, selection, delete, move/rotate/scale, push/pull, box component, tags and basic materials. These older mutation paths are not claimed equivalent to the strict pre-commit semantic-validation path; see the [Tool Guide](docs/TOOL_GUIDE.md).
 
