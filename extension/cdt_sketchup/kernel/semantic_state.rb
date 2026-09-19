@@ -253,7 +253,7 @@ module CDTSketchUp
         }
       end
 
-      entities = semantic_definition_entities(entity)
+      entities = semantic_topology_entities(entity)
       unless entities
         return {
           "vertex_count" => 0,
@@ -276,6 +276,31 @@ module CDTSketchUp
       elsif entity.is_a?(Sketchup::ComponentInstance)
         entity.definition.entities.to_a
       end
+    end
+
+    def semantic_topology_entities(entity, depth = 1)
+      entities = semantic_definition_entities(entity)
+      return nil unless entities
+      if depth > MAX_SPATIAL_NESTING
+        raise BridgeError.new(
+          "semantic_state_too_large",
+          "Semantic topology nesting exceeds the bounded depth"
+        )
+      end
+
+      raw = entities.select do |item|
+        item.is_a?(Sketchup::Edge) || item.is_a?(Sketchup::Face)
+      end
+      return entities unless raw.empty?
+
+      nested_containers = entities.select do |item|
+        item.is_a?(Sketchup::Group) || item.is_a?(Sketchup::ComponentInstance)
+      end
+      if entities.length == 1 && nested_containers.length == 1
+        return semantic_topology_entities(nested_containers.first, depth + 1)
+      end
+
+      entities
     end
 
     def semantic_geometry_fingerprint(entity)
@@ -332,13 +357,35 @@ module CDTSketchUp
       )
     end
 
-    def semantic_manifold(entity)
+    def semantic_manifold(entity, depth = 1)
+      if depth > MAX_SPATIAL_NESTING
+        raise BridgeError.new(
+          "semantic_state_too_large",
+          "Semantic manifold nesting exceeds the bounded depth"
+        )
+      end
+
+      native = entity.respond_to?(:manifold?) ? entity.manifold? : nil
+      return true if native == true
+
+      entities = semantic_definition_entities(entity)
+      return native unless entities
+
+      raw = entities.any? do |item|
+        item.is_a?(Sketchup::Edge) || item.is_a?(Sketchup::Face)
+      end
+      nested_containers = entities.select do |item|
+        item.is_a?(Sketchup::Group) || item.is_a?(Sketchup::ComponentInstance)
+      end
+      if !raw && entities.length == 1 && nested_containers.length == 1
+        return semantic_manifold(nested_containers.first, depth + 1)
+      end
+
       definition = entity.respond_to?(:definition) ? entity.definition : nil
       if definition && definition.respond_to?(:manifold?)
         return definition.manifold?
       end
-      return entity.manifold? if entity.respond_to?(:manifold?)
-      nil
+      native
     end
 
     def semantic_hierarchy(entity)

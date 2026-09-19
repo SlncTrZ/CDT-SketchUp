@@ -71,7 +71,7 @@ Examples of states that must fail rather than silently continue include:
 - unsaved active model before `model_open`;
 - rooted file/asset target whose canonical path escapes its allowed root;
 - asset bytes/version that do not match registry identity, or loaded-definition identity that cannot be verified;
-- non-manifold operands for exact solid spatial queries or spatial work beyond declared triangle/pair budgets;
+- non-manifold operands for bounded-exact solid spatial queries, sub-contract claims below the measured `1e-7` native-inch resolution, or spatial work beyond the `1024`-triangle / `1048576` pair-test budgets;
 - stale/corrupt artifact seals or an unsaved model presented as accepted evidence.
 
 ## Domain security boundary

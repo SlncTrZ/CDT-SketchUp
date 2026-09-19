@@ -76,10 +76,9 @@ module CDTSketchUp
     def connected_entities(entity)
       if raw_topology_entity?(entity)
         bounded_raw_topology_closure(entity)
-      elsif entity.is_a?(Sketchup::Group)
-        entity.entities.to_a
-      elsif entity.is_a?(Sketchup::ComponentInstance)
-        entity.definition.entities.to_a
+      elsif entity.is_a?(Sketchup::Group) ||
+            entity.is_a?(Sketchup::ComponentInstance)
+        semantic_topology_entities(entity) || []
       else
         []
       end

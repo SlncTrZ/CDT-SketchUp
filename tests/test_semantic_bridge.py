@@ -744,6 +744,15 @@ class SemanticBridgeTests(unittest.TestCase):
         self.assertIn("bounded_raw_topology_closure(entity)", source)
         self.assertIn("closure = bounded_raw_topology_closure(entity)", source)
 
+    def test_nested_semantic_topology_uses_bounded_wrapper_descent(self) -> None:
+        source = read_extension_sources()
+        self.assertIn("def semantic_topology_entities", source)
+        self.assertIn("MAX_SPATIAL_NESTING", source)
+        self.assertIn('"semantic_state_too_large"', source)
+        self.assertIn("nested_containers.length == 1", source)
+        self.assertIn("semantic_topology_entities(nested_containers.first", source)
+        self.assertIn("semantic_topology_entities(entity)", source)
+
     def test_measurement_queries_are_read_only_and_bounded(self) -> None:
         source = read_extension_sources()
         self.assertIn('"measure_distance" => :handle_measure_distance', source)

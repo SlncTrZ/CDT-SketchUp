@@ -29,6 +29,14 @@ from extension_tree import EXTENSION_ROOT, read_extension_sources  # noqa: E402
 REPO = Path(__file__).resolve().parents[1]
 
 
+def load_script(name: str):
+    spec = importlib.util.spec_from_file_location(name, REPO / "scripts" / f"{name}.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_native_bench_b4():
     spec = importlib.util.spec_from_file_location(
         "native_bench_b4",
@@ -110,6 +118,56 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertLess(len(main_lines), 300)
         for dirname in ("bridge", "kernel", "actions", "queries"):
             self.assertTrue(list((EXTENSION_ROOT / "cdt_sketchup" / dirname).glob("*.rb")), dirname)
+
+    def test_release_manifest_binds_exact_source_runtime_and_evidence(self) -> None:
+        manifest_module = load_script("release_manifest")
+        manifest = manifest_module.build_manifest(
+            evidence_paths=[REPO / "scripts" / "native_bench_b4.py"],
+        )
+        self.assertRegex(manifest["source"]["revision"], r"^[0-9a-f]{40}$")
+        self.assertRegex(manifest["source"]["tree"], r"^[0-9a-f]{40}$")
+        self.assertIn("python", manifest["runtime"])
+        self.assertIn("platform", manifest["runtime"])
+        self.assertIn("runner_os", manifest["ci"])
+        self.assertIn("github_sha", manifest["ci"])
+        self.assertEqual(
+            manifest["contract"]["contract_version"],
+            CONTRACT_VERSION,
+        )
+        self.assertEqual(
+            manifest["contract"]["capability_fingerprint"],
+            capability_module.CAPABILITY_FINGERPRINT,
+        )
+        evidence = manifest["evidence"]
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(evidence[0]["path"], "scripts/native_bench_b4.py")
+        self.assertRegex(evidence[0]["sha256"], r"^[0-9a-f]{64}$")
+
+    def test_public_spatial_exactness_claims_are_bounded(self) -> None:
+        docs = {
+            path.name: path.read_text(encoding="utf-8")
+            for path in (
+                REPO / "README.md",
+                REPO / "docs" / "ARCHITECTURE.md",
+                REPO / "docs" / "COMPATIBILITY.md",
+                REPO / "docs" / "TOOL_GUIDE.md",
+            )
+        }
+        for name, text in docs.items():
+            if "exact spatial" in text or "exact manifold-solid" in text:
+                self.assertIn("1e-7", text, name)
+                self.assertIn("1024", text, name)
+                self.assertIn("1048576", text, name)
+
+    def test_ci_emits_exact_source_release_manifest_on_linux_and_windows(self) -> None:
+        workflow = (REPO / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ubuntu-latest", workflow)
+        self.assertIn("windows-latest", workflow)
+        self.assertIn("scripts/release_manifest.py", workflow)
+        self.assertIn("--require-clean", workflow)
+        self.assertIn("actions/upload-artifact@v4", workflow)
 
     def test_rbz_build_is_reproducible(self) -> None:
         spec = importlib.util.spec_from_file_location("build_rbz", REPO / "scripts" / "build_rbz.py")
