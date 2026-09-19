@@ -1,5 +1,5 @@
 # cdt_sketchup/kernel/mutation_journal.rb — stable mutation identity and reconciliation
-# Wing: code | Topic: sketchup_recovery | Updated: 2026-09-18
+# Wing: code | Topic: sketchup_recovery | Updated: 2026-09-19
 #
 # Retry safety for strict mutations. A caller keeps one mutation_id across
 # transport retries; the journal replays the stored receipt instead of
@@ -7,11 +7,9 @@
 # is process memory only: restarts and model switches invalidate it by
 # construction (fail-closed via mutation_reconcile, never silent replay).
 #
-# Canonical hash input covers action/params/expect/unit/coordinate_space/
-# if_match as RECEIVED (pre-normalize). target_context and if_context are
-# routing/caller guards consumed by the outer dispatch before the inner
-# execution sees them, so they are excluded on both runtimes to keep the
-# outer claim and the inner execution bound to the same hash.
+# Canonical hash input covers every logical execute_geometry field except the
+# mutation transport metadata itself. Routing/precondition fields such as
+# target_context, if_context and if_match are part of operation identity.
 
 module CDTSketchUp
   class BridgeServer
@@ -22,25 +20,52 @@ module CDTSketchUp
     MAX_JOURNAL_ENTRIES = 128
     MAX_JOURNAL_AGE_SECONDS = 900
 
-    def mutation_canonical_json(node)
-      if node.is_a?(Hash)
-        parts = []
-        node.keys.map { |k| k.to_s }.sort.each do |key|
-          raw = node.key?(key) ? node[key] : node[key.to_sym]
-          parts << JSON.generate(key) + ":" + mutation_canonical_json(raw)
+    def mutation_utf8_hex(value)
+      value.encode(Encoding::UTF_8).unpack1("H*")
+    end
+
+    def mutation_canonical_node(node)
+      if node.nil?
+        ["n"]
+      elsif node == true || node == false
+        ["b", node ? "1" : "0"]
+      elsif node.is_a?(Integer)
+        ["i", node.to_s]
+      elsif node.is_a?(Float)
+        unless node.finite?
+          raise ArgumentError, "canonical mutation values must be finite"
         end
-        "{" + parts.join(",") + "}"
+        value = node.zero? ? 0.0 : node
+        ["f", [value].pack("G").unpack1("H*")]
+      elsif node.is_a?(String)
+        ["s", mutation_utf8_hex(node)]
       elsif node.is_a?(Array)
-        "[" + node.map { |item| mutation_canonical_json(item) }.join(",") + "]"
+        ["a", node.map { |item| mutation_canonical_node(item) }]
+      elsif node.is_a?(Hash)
+        entries = node.map do |key, value|
+          unless key.is_a?(String)
+            raise ArgumentError, "canonical mutation object keys must be strings"
+          end
+          [mutation_utf8_hex(key), mutation_canonical_node(value)]
+        end
+        entries.sort_by! { |entry| entry[0] }
+        ["o", entries]
       else
-        JSON.generate(node)
+        raise ArgumentError, "unsupported canonical mutation value: #{node.class}"
       end
+    end
+
+    def mutation_canonical_json(node)
+      JSON.generate(mutation_canonical_node(node))
     end
 
     def mutation_canonical_request(action, envelope)
       request = { "action" => action }
-      %w[params expect unit coordinate_space if_match].each do |key|
-        request[key] = envelope[key] if envelope.key?(key)
+      envelope.each do |raw_key, value|
+        key = raw_key.to_s
+        next if key == "action" || key == "mutation"
+
+        request[key] = value
       end
       request
     end

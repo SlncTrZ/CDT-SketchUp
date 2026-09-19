@@ -1,6 +1,6 @@
 """Standalone Ruby checks for the mutation journal (no SketchUp needed).
-Covers canonical JSON/hash parity vectors are exercised from
-tests/test_mutation_identity.py; this file pins journal bound behavior.
+Covers typed canonical JSON/hash parity vectors shared with
+tests/test_mutation_identity.py and journal bound behavior.
 """
 
 require "json"
@@ -29,21 +29,50 @@ end
 server = CDTSketchUp::BridgeServer.allocate
 server.instance_variable_set(:@mutation_journal, {})
 
-# Canonical vectors must match the Python side byte-for-byte.
-vectors = {
-  '{"action":"create_box","expect":{"active_entity_delta":1},"params":{"dimensions":[1,1,1],"name":"B","origin":[0,0,0]},"unit":"in"}' => nil,
-  '{"action":"transform_entity","params":{"matrix":[1,0,0,0,0,1,0,0,0,0,1,0,2.5,0,0,1],"persistent_id":7}}' => nil
-}
-vectors.each_key do |canonical|
-  parsed = JSON.parse(canonical)
-  rebuilt = server.send(:mutation_canonical_json, parsed)
-  check.call("canonical stable #{canonical[0, 40]}", rebuilt == canonical)
+# Canonical vectors must match Python byte-for-byte, including values whose
+# native JSON float formatting differs between Python and Ruby.
+vectors = [
+  {
+    "raw" => '{"action":"create_box","expect":{"active_entity_delta":1},"params":{"dimensions":[1,1,1],"name":"B","origin":[0,0,0]},"unit":"in"}',
+    "canonical" => '["o",[["616374696f6e",["s","6372656174655f626f78"]],["657870656374",["o",[["6163746976655f656e746974795f64656c7461",["i","1"]]]]],["706172616d73",["o",[["64696d656e73696f6e73",["a",[["i","1"],["i","1"],["i","1"]]]],["6e616d65",["s","42"]],["6f726967696e",["a",[["i","0"],["i","0"],["i","0"]]]]]]],["756e6974",["s","696e"]]]]',
+    "hash" => "92a81cd784c92befb1be3192f25a4adaaedf851a0999eae0c5b53361ef91c08f"
+  },
+  {
+    "raw" => '{"action":"probe","params":{"values":[1e-7,1e20,-0.0,0.0,0.1,1.2345678901234567]}}',
+    "canonical" => '["o",[["616374696f6e",["s","70726f6265"]],["706172616d73",["o",[["76616c756573",["a",[["f","3e7ad7f29abcaf48"],["f","4415af1d78b58c40"],["f","0000000000000000"],["f","0000000000000000"],["f","3fb999999999999a"],["f","3ff3c0ca428c59fb"]]]]]]]]]',
+    "hash" => "2b667560010250e46fac27ece9ff5a7ff910d3deda78beae265cbbb6ddc8d593"
+  }
+]
+
+vectors.each_with_index do |vector, index|
+  payload = JSON.parse(vector["raw"])
+  rebuilt = server.send(:mutation_canonical_json, payload)
+  check.call("canonical vector #{index + 1}", rebuilt == vector["canonical"])
+  hash = server.send(:mutation_request_hash, payload["action"], payload)
+  check.call("hash vector #{index + 1}", hash == vector["hash"])
 end
 
-payload = JSON.parse(vectors.keys.first)
-ruby_hash = server.send(:mutation_request_hash, payload["action"], payload)
-check.call("hash is sha256 hex", ruby_hash.match?(/\A[0-9a-f]{64}\z/))
-puts "VECTOR_HASH=#{ruby_hash}"
+# Routing/precondition fields are part of logical operation identity.
+base = {
+  "action" => "create_box",
+  "params" => { "origin" => [0, 0, 0], "dimensions" => [1, 1, 1] },
+  "if_context" => { "id" => "ctx-a", "revision" => "rev-1" },
+  "if_match" => "entity-fp-1",
+  "target_context" => { "instance_path" => [11, 22] }
+}
+base_hash = server.send(:mutation_request_hash, base["action"], base)
+changed_context = Marshal.load(Marshal.dump(base))
+changed_context["if_context"]["revision"] = "rev-2"
+changed_target = Marshal.load(Marshal.dump(base))
+changed_target["target_context"]["instance_path"] = [11, 23]
+check.call(
+  "if_context bound",
+  server.send(:mutation_request_hash, base["action"], changed_context) != base_hash
+)
+check.call(
+  "target_context bound",
+  server.send(:mutation_request_hash, base["action"], changed_target) != base_hash
+)
 
 # Journal bounds: 129 stores keep 128, evict oldest first.
 129.times do |i|
@@ -68,12 +97,51 @@ module CDTSketchUp
       super(message)
     end
   end
+
+  class BridgeServer
+    def secure_compare(left, right)
+      left == right
+    end
+  end
 end
 begin
   server.send(:mutation_check, { "action" => "x", "mutation" => { "id" => "bad", "request_hash" => "h" } }, nil)
   check.call("malformed id rejected", false)
 rescue CDTSketchUp::BridgeError => e
   check.call("malformed id rejected", e.kind == "invalid_argument")
+end
+
+# Same stable ID cannot be retargeted by changing routing/precondition fields.
+model = Struct.new(:guid).new("g")
+stable_id = "ab" * 16
+base_hash = server.send(:mutation_request_hash, base["action"], base)
+server.send(
+  :journal_store,
+  stable_id,
+  base_hash,
+  base["action"],
+  "committed",
+  { "ok" => true },
+  model.guid,
+  "before",
+  "after"
+)
+retargeted = Marshal.load(Marshal.dump(base))
+retargeted["target_context"]["instance_path"] = [99]
+retargeted_hash = server.send(
+  :mutation_request_hash,
+  retargeted["action"],
+  retargeted
+)
+retargeted["mutation"] = {
+  "id" => stable_id,
+  "request_hash" => retargeted_hash
+}
+begin
+  server.send(:mutation_check, retargeted, model)
+  check.call("same id changed target rejected", false)
+rescue CDTSketchUp::BridgeError => e
+  check.call("same id changed target rejected", e.kind == "mutation_id_reuse")
 end
 
 puts "----"
