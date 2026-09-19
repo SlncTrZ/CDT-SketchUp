@@ -12,7 +12,12 @@ from typing import Any, Awaitable, Callable
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
-from .bridge import BridgeClient, BridgeProtocolError, BridgeUnavailableError
+from .bridge import (
+    BridgeClient,
+    BridgeProtocolError,
+    BridgeResponseLostError,
+    BridgeUnavailableError,
+)
 from .mutation import mutation_envelope, new_mutation_id, valid_mutation_id
 from .contract import (
     PROVIDER_NAME,
@@ -70,6 +75,18 @@ async def _call_bridge(
         body["mutation"] = mutation_envelope(chosen_id, body)
     try:
         return await _bridge.call(command, body if params is not None else None)
+    except BridgeResponseLostError:
+        if command == "execute_geometry":
+            return _error(
+                "unknown_commit",
+                "Mutation completion is unknown; reconcile the operation before retry.",
+                retryable=False,
+            )
+        return _error(
+            "bridge_response_lost",
+            "Bridge response was lost; completion is unknown.",
+            retryable=False,
+        )
     except BridgeUnavailableError:
         return _error(
             "live_bridge_unavailable",
@@ -237,6 +254,23 @@ async def execute_geometry(
         payload,
         mutation_id=operation_id,
     )
+
+
+@mcp.tool()
+async def reconcile_operation(
+    operation_id: str,
+    before: dict[str, Any] | None = None,
+    expect_post: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Reconcile one caller-stable operation without retrying the mutation."""
+    if not valid_mutation_id(operation_id):
+        raise ValueError("operation_id must be lowercase hex32")
+    payload: dict[str, Any] = {"mutation_id": operation_id}
+    if before is not None:
+        payload["before"] = before
+    if expect_post is not None:
+        payload["expect_post"] = expect_post
+    return await _call_bridge("mutation_reconcile", payload)
 
 
 @mcp.tool()

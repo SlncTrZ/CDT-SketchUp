@@ -31,7 +31,7 @@ class ContractTests(unittest.TestCase):
     def test_provider_identity_is_stable(self) -> None:
         self.assertEqual(PROVIDER_ID, "cdt_sketchup")
         self.assertEqual(PROVIDER_VERSION, "0.1.0")
-        self.assertEqual(CONTRACT_VERSION, "0.29")
+        self.assertEqual(CONTRACT_VERSION, "0.30")
         self.assertEqual(COMMON_CONTRACT_VERSION, "0.1")
         self.assertEqual(SKETCHUP_EXTENSION_VERSION, "0.1")
 
@@ -50,6 +50,7 @@ class ContractTests(unittest.TestCase):
                 "object_list",
                 "object_get",
                 "execute_geometry",
+                "reconcile_operation",
                 "get_entity_state",
                 "transform_entity",
                 "move_entity",
@@ -169,6 +170,15 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(
             by_tool["execute_geometry"]["idempotence"],
             "bounded_journal_replay_when_operation_id_supplied",
+        )
+        self.assertEqual(by_tool["reconcile_operation"]["safety_class"], "read_only")
+        self.assertEqual(
+            by_tool["reconcile_operation"]["identity_semantics"],
+            "caller_operation_id",
+        )
+        self.assertEqual(
+            by_tool["reconcile_operation"]["runtime_versions"],
+            ["24.0.594"],
         )
         self.assertEqual(by_tool["transform_entity"]["safety_class"], "strict_mutation")
         self.assertTrue(by_tool["transform_entity"]["rollback_verified"])

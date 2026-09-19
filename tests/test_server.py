@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from mcp import Client  # noqa: E402
 
+from cdt_sketchup.bridge import BridgeResponseLostError  # noqa: E402
 from cdt_sketchup.server import (  # noqa: E402
     BearerAuthMiddleware,
     create_app,
@@ -37,6 +38,7 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "object_list",
                 "object_get",
                 "execute_geometry",
+                "reconcile_operation",
                 "get_entity_state",
                 "transform_entity",
                 "move_entity",
@@ -231,6 +233,64 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                         },
                         "operation_id": "not-a-valid-operation-id",
                     },
+                )
+        self.assertTrue(result.is_error)
+        call.assert_not_awaited()
+
+    async def test_lost_mutation_response_is_unknown_commit_and_not_auto_retried(self) -> None:
+        call = AsyncMock(side_effect=BridgeResponseLostError("bridge response lost"))
+        operation_id = "ab" * 16
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "execute_geometry",
+                    {
+                        "action": "create_box",
+                        "params": {
+                            "name": "LOST",
+                            "dimensions": [1.0, 1.0, 1.0],
+                            "origin": [0.0, 0.0, 0.0],
+                        },
+                        "expect": {
+                            "active_entity_delta": 1,
+                            "type": "ComponentInstance",
+                        },
+                        "operation_id": operation_id,
+                    },
+                )
+        self.assertFalse(result.is_error)
+        payload = result.structured_content
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error"]["kind"], "unknown_commit")
+        self.assertFalse(payload["error"]["retryable"])
+        self.assertEqual(call.await_count, 1)
+
+    async def test_reconcile_operation_is_public_read_only_recovery_path(self) -> None:
+        call = AsyncMock(return_value={
+            "mutation_id": "ab" * 16,
+            "status": "committed",
+            "journal": "committed",
+        })
+        operation_id = "ab" * 16
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=True) as client:
+                result = await client.call_tool(
+                    "reconcile_operation",
+                    {"operation_id": operation_id},
+                )
+        self.assertFalse(result.is_error)
+        call.assert_awaited_once_with(
+            "mutation_reconcile",
+            {"mutation_id": operation_id},
+        )
+
+    async def test_reconcile_operation_rejects_invalid_id_before_bridge(self) -> None:
+        call = AsyncMock()
+        with patch("cdt_sketchup.server._bridge.call", call):
+            async with Client(mcp, raise_exceptions=False) as client:
+                result = await client.call_tool(
+                    "reconcile_operation",
+                    {"operation_id": "invalid"},
                 )
         self.assertTrue(result.is_error)
         call.assert_not_awaited()

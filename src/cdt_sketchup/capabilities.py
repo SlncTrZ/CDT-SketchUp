@@ -319,6 +319,12 @@ CAPABILITY_DESCRIPTORS: tuple[CapabilityDescriptor, ...] = (
         runtime_versions=VERIFIED_SKETCHUP_RUNTIME_VERSIONS,
     ),
     _read(
+        "reconcile_operation",
+        "sketchup.recovery.operation_reconcile",
+        identity="caller_operation_id",
+        units="none",
+    ),
+    _read(
         "get_entity_state",
         "sketchup.semantic.entity_state",
         identity="persistent_id_exact",

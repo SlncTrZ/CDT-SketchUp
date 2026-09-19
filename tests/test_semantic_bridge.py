@@ -37,7 +37,8 @@ class SemanticBridgeTests(unittest.TestCase):
         commit_index = source.index("model.commit_operation", validation_index)
         self.assertLess(validation_index, commit_index)
         self.assertIn("model.abort_operation", source)
-        self.assertIn('"rolled_back" => !!aborted', source)
+        self.assertIn('"abort_succeeded" => !!aborted', source)
+        self.assertIn('"rolled_back" => rollback_verified', source)
         self.assertIn('"rollback_verified"', source)
 
     def test_semantic_expectation_schema_is_closed_and_validates_position(self) -> None:
@@ -74,8 +75,22 @@ class SemanticBridgeTests(unittest.TestCase):
         source = read_extension_sources()
         self.assertIn("semantic_model_fingerprint", source)
         self.assertIn('"model_fingerprint"', source)
-        self.assertIn('"rolled_back" => !!aborted', source)
+        self.assertIn('"abort_succeeded" => !!aborted', source)
+        self.assertIn('"rolled_back" => rollback_verified', source)
+        self.assertNotIn('"rolled_back" => !!aborted', source)
         self.assertIn("rolled_back_fingerprint == before_fingerprint", source)
+        self.assertIn("rollback_journal_status", source)
+
+    def test_unverified_rollback_cannot_be_journaled_as_rolled_back(self) -> None:
+        source = read_extension_sources()
+        self.assertIn(
+            'rollback_journal_status(rollback_receipt)',
+            source,
+        )
+        self.assertNotIn(
+            'params, model,\n            "rolled_back",\n            build_rollback_result(',
+            source,
+        )
 
     def test_invalid_action_is_validated_inside_ai_step_transaction(self) -> None:
         source = read_extension_sources()

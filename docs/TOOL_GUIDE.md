@@ -1,6 +1,6 @@
 # CDT-SketchUp Tool Guide
 
-> Status: source contract 0.29 · measured native acceptance through contract 0.28 on SketchUp 2024 `24.0.594` / Ruby `3.2.2` · 67 public MCP tools · Updated: 2026-09-19
+> Status: source contract 0.30 · broad native baseline through contract 0.28 plus live-accepted 0.30 recovery additions on SketchUp 2024 `24.0.594` / Ruby `3.2.2` · 68 public MCP tools · Updated: 2026-09-19
 
 ## Runtime model
 
@@ -133,7 +133,13 @@ Executes one closed geometry action inside `model.start_operation("AI_Step", tru
 
 `operation_id` is an optional caller-owned lowercase 32-hex logical operation identity. A caller that needs retry/reconnect correlation generates it once and reuses the **same ID only for the identical logical request**. The provider maps it to native `mutation.id`; the bridge still creates a fresh wire `request_id` for every connection. The mutation hash binds action, payload, target context and stale-state guards, so reusing one ID with changed logical content is rejected by the native journal.
 
-The current replay guarantee is deliberately bounded by the in-process native journal. An omitted `operation_id` preserves the existing one-shot behavior with an internally generated identity. A supplied ID is **not** permission for blind automatic retry after ambiguous completion: journal restart/expiry and definitive public reconciliation remain part of the recovery gate. Until that gate is closed, callers must treat uncertain completion as uncertain rather than assume `not_started`.
+The replay guarantee is deliberately bounded by the in-process native journal. An omitted `operation_id` preserves the existing one-shot behavior with an internally generated identity. A supplied ID is **not** permission for blind automatic retry after ambiguous completion. If a mutation request was sent but no trustworthy response is received, the public provider returns `unknown_commit` with `retryable=false`; callers first invoke `reconcile_operation` with the same stable ID. Journal restart/expiry can still produce `journal=miss`, so callers must use reconciliation proof rather than assume `not_started`.
+
+### `reconcile_operation(operation_id, before?, expect_post?)`
+
+Read-only public recovery query for one caller-stable operation ID. It forwards to the native mutation journal without executing or retrying the mutation. A live journal can return `committed` with the authoritative stored receipt, `rolled_back` only when rollback restoration was fingerprint-verified, or `unknown` when completion cannot be proven. On journal miss, optional `before`/`expect_post` model/entity fingerprints may prove `not_started`, `committed_but_receipt_lost`, or `diverged_unknown`; absence of proof stays unknown. Unknown journal entries are never replayed as idempotent success receipts.
+
+Contract `0.30` acceptance fault-injects a real transport loss after the Ruby bridge has produced a committed receipt but before the Python provider receives it. Through the Streamable HTTP MCP surface, the caller observes `unknown_commit`, reconciles the same operation as committed, retries the identical operation ID to receive `mutation.replayed=true`, and verifies active-entity count does not increase a second time.
 
 `instance_path` contains 1..32 persistent IDs from outermost to innermost Group/ComponentInstance. The native bridge resolves every PID, rejects duplicates and locked/invalid paths, constructs a native `Sketchup::InstancePath`, enters it **before** starting `AI_Step`, and restores the caller edit path after the inner strict operation finishes. This ordering is intentional: changing SketchUp's active edit context is not treated as part of the mutation transaction. Invalid/stale nesting fails before mutation as `context_target_unavailable`.
 
@@ -182,7 +188,7 @@ Strict requests normally provide `expect.active_entity_delta` plus at least one 
 
 `create_face` uses a closed `points` schema and returns the Face PID. `extrude_face_to_group` accepts only a Face `persistent_id`, a non-zero signed distance, and optional group name. For safety it requires the source face to be isolated; after push/pull it groups the connected shell and returns the new Group PID so the result can be validated as a SketchUp Solid and targeted by later transforms.
 
-If execution or validation fails, the bridge calls `abort_operation` and reports both `rolled_back` and `rollback_verified`. Verification requires the pre/post active entity count and model fingerprint to match.
+If execution or validation fails, the bridge attempts `abort_operation`/compensation and independently verifies restoration against the pre-operation model fingerprint. `rolled_back=true` is reported and journaled only when that verification succeeds. An abort API return without matching restoration is **not** rollback proof; the journal remains `unknown_commit` and must be reconciled.
 
 ### `transform_entity(persistent_id, matrix)`
 
@@ -572,4 +578,4 @@ The provider never returns fake success for a failed live action. Representative
 
 ## Acceptance status
 
-Measured native acceptance on SketchUp 2024 `24.0.594` / Ruby `3.2.2` is current through contract **`0.28`** and **67 MCP tools**. In addition to the established semantic-loop baseline, the measured gap matrix proves bounded three-level target-context mutation/restoration, cryptographic asset identity and CDT_Engineer resolver E2E, bounded indexed mesh realization/rollback/budget gates, exact manifold-solid clearance/overlap including rotated AABB false positives, non-manifold fail-closed behavior, uncertain-completion reconciliation + compensation, content-addressed artifact seal/staleness/reseal/reopen, and post-reopen instance-specific/shared-definition asset behavior. The public `runtime_versions` evidence for these capabilities therefore includes `24.0.594`; no other SketchUp major release is implied supported. See [Compatibility](COMPATIBILITY.md).
+The broad measured native baseline on SketchUp 2024 `24.0.594` / Ruby `3.2.2` remains contract **`0.28`**; the public surface is now **68 MCP tools**, and contract **`0.30`** recovery additions are separately live-accepted through public response-loss/reconciliation fault injection. In addition to the established semantic-loop baseline, the measured gap matrix proves bounded three-level target-context mutation/restoration, cryptographic asset identity and CDT_Engineer resolver E2E, bounded indexed mesh realization/rollback/budget gates, exact manifold-solid clearance/overlap including rotated AABB false positives, non-manifold fail-closed behavior, uncertain-completion reconciliation + compensation, content-addressed artifact seal/staleness/reseal/reopen, and post-reopen instance-specific/shared-definition asset behavior. The public `runtime_versions` evidence for these capabilities therefore includes `24.0.594`; no other SketchUp major release is implied supported. See [Compatibility](COMPATIBILITY.md).

@@ -31,7 +31,9 @@ module CDTSketchUp
         if entry["status"] == "committed"
           status = "committed"
         elsif entry["status"] == "rolled_back"
-          status = "rolled_back"
+          if receipt.is_a?(Hash) && receipt["rollback_verified"] == true
+            status = "rolled_back"
+          end
         elsif entry["status"] == "unknown_commit"
           if !expect_post.nil? && reconcile_proof_matches(model, expect_post)
             status = "committed"

@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cdt_sketchup.bridge import BridgeClient  # noqa: E402
+from cdt_sketchup.bridge import BridgeClient, BridgeResponseLostError  # noqa: E402
 
 
 class BridgeClientTests(unittest.IsolatedAsyncioTestCase):
@@ -50,6 +50,25 @@ class BridgeClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(received["command"], "ping")
         self.assertEqual(received["token"], "a" * 64)
         self.assertNotIn("code", received)
+
+    async def test_response_loss_after_send_is_uncertain(self) -> None:
+        async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            await reader.readline()
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handle, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            token_path = Path(temp_dir) / "bridge.token"
+            token_path.write_text("d" * 64, encoding="utf-8")
+            client = BridgeClient(port=port, token_path=token_path)
+            try:
+                with self.assertRaises(BridgeResponseLostError):
+                    await client.call("execute_geometry", {"action": "probe"})
+            finally:
+                server.close()
+                await server.wait_closed()
 
     async def test_wire_request_id_remains_distinct_from_stable_mutation_id(self) -> None:
         received: list[dict[str, object]] = []

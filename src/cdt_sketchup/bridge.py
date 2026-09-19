@@ -22,6 +22,14 @@ class BridgeProtocolError(RuntimeError):
     """Raised for malformed, rejected, or mismatched bridge messages."""
 
 
+class BridgeRemoteError(BridgeProtocolError):
+    """Raised when SketchUp returns a complete typed rejection response."""
+
+
+class BridgeResponseLostError(BridgeProtocolError):
+    """Raised when a sent request has no trustworthy completion response."""
+
+
 class BridgeUnavailableError(ConnectionError):
     """Raised when the local SketchUp bridge cannot be reached."""
 
@@ -83,7 +91,7 @@ def decode_response(frame: bytes, *, expected_request_id: str) -> Any:
         error = payload.get("error") or {}
         kind = error.get("kind", "bridge_error") if isinstance(error, dict) else "bridge_error"
         message = error.get("message", "SketchUp bridge rejected request") if isinstance(error, dict) else str(error)
-        raise BridgeProtocolError(f"{kind}: {message}")
+        raise BridgeRemoteError(f"{kind}: {message}")
     return payload.get("result")
 
 
@@ -154,17 +162,43 @@ class BridgeClient:
         except (OSError, asyncio.TimeoutError) as exc:
             raise BridgeUnavailableError("SketchUp bridge unavailable") from exc
 
+        frame_out = encode_frame(request)
         try:
-            writer.write(encode_frame(request))
+            writer.write(frame_out)
             await asyncio.wait_for(writer.drain(), timeout=self._timeout)
             frame = await asyncio.wait_for(reader.readuntil(b"\n"), timeout=self._timeout)
             if len(frame) > MAX_FRAME_BYTES:
-                raise BridgeProtocolError("bridge response exceeds maximum size")
-            return decode_response(frame, expected_request_id=request_id)
+                raise BridgeResponseLostError(
+                    "bridge response exceeds maximum size after request send"
+                )
+            try:
+                return decode_response(frame, expected_request_id=request_id)
+            except BridgeRemoteError:
+                raise
+            except BridgeProtocolError as exc:
+                raise BridgeResponseLostError(
+                    "bridge response could not be verified after request send"
+                ) from exc
+        except BridgeRemoteError:
+            raise
+        except BridgeResponseLostError:
+            raise
         except asyncio.LimitOverrunError as exc:
-            raise BridgeProtocolError("bridge response exceeds maximum size") from exc
+            raise BridgeResponseLostError(
+                "bridge response exceeds maximum size after request send"
+            ) from exc
         except asyncio.IncompleteReadError as exc:
-            raise BridgeProtocolError("bridge closed before a complete response") from exc
+            raise BridgeResponseLostError(
+                "bridge closed before a complete response after request send"
+            ) from exc
+        except asyncio.TimeoutError as exc:
+            raise BridgeResponseLostError(
+                "bridge response timed out after request send"
+            ) from exc
+        except OSError as exc:
+            raise BridgeResponseLostError(
+                "bridge connection failed after request send"
+            ) from exc
         finally:
             writer.close()
             try:

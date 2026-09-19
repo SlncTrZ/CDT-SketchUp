@@ -144,6 +144,19 @@ rescue CDTSketchUp::BridgeError => e
   check.call("same id changed target rejected", e.kind == "mutation_id_reuse")
 end
 
+# Unknown completion must never be replayed as a definitive idempotent receipt.
+unknown_entry = {
+  "id" => stable_id,
+  "request_hash" => base_hash,
+  "action" => base["action"],
+  "status" => "unknown_commit",
+  "receipt" => { "rollback_verified" => false }
+}
+check.call(
+  "unknown completion is not replayable",
+  server.send(:mutation_replay_receipt, unknown_entry).nil?
+)
+
 puts "----"
 puts "passes=#{failures.empty? ? 'ALL' : 'SOME FAILED'}"
 exit(failures.empty? ? 0 : 1)

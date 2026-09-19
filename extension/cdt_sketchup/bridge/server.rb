@@ -312,30 +312,29 @@ module CDTSketchUp
           aborted = model.abort_operation
           operation_open = false
           compensate_non_undoable_action(model, action, action_metadata)
+          rollback_receipt = build_rollback_result(
+            model,
+            receipt_id: receipt_id,
+            started_at: started_at,
+            action: action,
+            aborted: aborted,
+            before_count: before_count,
+            before_fingerprint: before_fingerprint,
+            before_snapshot: before_snapshot,
+            validation: validation,
+            unit_info: unit_info,
+            coordinate_space: coordinate_space
+          )
           return journalize_mutation(
             params, model,
-            "rolled_back",
-            build_rollback_result(
-              model,
-              receipt_id: receipt_id,
-              started_at: started_at,
-              action: action,
-              aborted: aborted,
-              before_count: before_count,
-              before_fingerprint: before_fingerprint,
-              before_snapshot: before_snapshot,
-              validation: validation,
-              unit_info: unit_info,
-              coordinate_space: coordinate_space
-            )
+            rollback_journal_status(rollback_receipt),
+            rollback_receipt
           )
         end
 
         after_fingerprint = semantic_model_fingerprint(model, active_snapshot: after_snapshot)
         committed = model.commit_operation
         unless committed
-          journalize_mutation(params, model, "unknown_commit", nil,
-                              before_fingerprint, nil)
           raise BridgeError.new(
             "transaction_commit_failed",
             "SketchUp did not commit AI_Step transaction"
@@ -366,10 +365,7 @@ module CDTSketchUp
       rescue BridgeError => error
         aborted = operation_open ? model.abort_operation : false
         operation_open = false
-        journalize_mutation(
-          params, model,
-          "rolled_back",
-          build_rollback_result(
+        rollback_receipt = build_rollback_result(
           model,
           receipt_id: receipt_id,
           started_at: started_at,
@@ -385,13 +381,17 @@ module CDTSketchUp
             "message" => error.message,
             "retryable" => false
           }
-          )
+        )
+        journalize_mutation(
+          params, model,
+          rollback_journal_status(rollback_receipt),
+          rollback_receipt
         )
       rescue StandardError => error
         aborted = operation_open ? model.abort_operation : false
         operation_open = false
         log("execute_geometry failed: #{error.class}: #{error.message}")
-        unexpected = build_rollback_result(
+        rollback_receipt = build_rollback_result(
           model,
           receipt_id: receipt_id,
           started_at: started_at,
@@ -410,8 +410,8 @@ module CDTSketchUp
         )
         journalize_mutation(
           params, model,
-          unexpected["rollback_verified"] ? "rolled_back" : "unknown_commit",
-          unexpected
+          rollback_journal_status(rollback_receipt),
+          rollback_receipt
         )
       ensure
         model.abort_operation if operation_open

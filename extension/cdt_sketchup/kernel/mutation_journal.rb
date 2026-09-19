@@ -117,9 +117,21 @@ module CDTSketchUp
       entry
     end
 
+    def rollback_journal_status(receipt)
+      return "rolled_back" if receipt.is_a?(Hash) &&
+                              receipt["rollback_verified"] == true
+
+      "unknown_commit"
+    end
+
     def mutation_replay_receipt(entry)
       stored = entry["receipt"]
       return nil unless stored.is_a?(Hash)
+
+      status = entry["status"]
+      replayable = status == "committed" ||
+        (status == "rolled_back" && stored["rollback_verified"] == true)
+      return nil unless replayable
 
       replay = stored.dup
       replay["mutation"] = {

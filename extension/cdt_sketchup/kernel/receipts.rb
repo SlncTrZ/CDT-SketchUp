@@ -144,7 +144,8 @@ module CDTSketchUp
       rollback_model = receipt_model_state(rolled_back_count, rolled_back_fingerprint)
       rollback_detail = {
         "attempted" => true,
-        "rolled_back" => !!aborted,
+        "abort_succeeded" => !!aborted,
+        "rolled_back" => rollback_verified,
         "verified" => rollback_verified,
         "snapshot_error" => rollback_snapshot_error,
         "fingerprint_error" => rollback_fingerprint_error
@@ -181,8 +182,9 @@ module CDTSketchUp
         "mutation" => mutation_info,
         "idempotent" => idempotent,
         "journal_status" => journal_status,
-        # Contract 0.9 compatibility aliases.
-        "rolled_back" => !!aborted,
+        # Compatibility aliases remain truthful: rollback is claimed only
+        # when restoration is independently fingerprint-verified.
+        "rolled_back" => rollback_verified,
         "rollback_verified" => rollback_verified,
         "before" => before_model,
         "after_rollback" => rollback_model
