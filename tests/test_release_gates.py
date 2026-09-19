@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -26,6 +27,17 @@ from cdt_sketchup.contract import (  # noqa: E402
 from extension_tree import EXTENSION_ROOT, read_extension_sources  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+def load_native_bench_b4():
+    spec = importlib.util.spec_from_file_location(
+        "native_bench_b4",
+        REPO / "scripts" / "native_bench_b4.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def git(*args: str) -> subprocess.CompletedProcess:
@@ -115,6 +127,54 @@ class ReleaseGateTests(unittest.TestCase):
         checks, code = doctor.run_doctor(live=False)
         self.assertIn(code, (0, 1))
         self.assertTrue(checks)
+
+    def test_b4_certification_accepts_only_clean_report(self) -> None:
+        bench = load_native_bench_b4()
+        report = {
+            "workloads": {
+                "state": {"errors": 0},
+                "create": {"errors": 0},
+            },
+            "over_budget": {"fail_closed": True, "crashed": False},
+            "cleanup": {"residual": 0},
+        }
+        self.assertEqual(bench.certification_violations(report), [])
+
+    def test_b4_certification_rejects_errors_residual_and_fail_open(self) -> None:
+        bench = load_native_bench_b4()
+        report = {
+            "workloads": {
+                "state": {"errors": 2},
+                "create": {"errors": 0},
+            },
+            "over_budget": {"fail_closed": False, "crashed": False},
+            "cleanup": {"residual": 1},
+        }
+        violations = bench.certification_violations(report)
+        self.assertTrue(any("workload_errors" in item for item in violations))
+        self.assertTrue(any("fail_closed" in item for item in violations))
+        self.assertTrue(any("cleanup_residual" in item for item in violations))
+
+    def test_b4_certify_cli_fails_machine_gate_but_run_remains_report_only(self) -> None:
+        bench = load_native_bench_b4()
+        outcome = {
+            "bridge_available": True,
+            "report": {
+                "workloads": {"state": {"errors": 1}},
+                "over_budget": {"fail_closed": True, "crashed": False},
+                "cleanup": {"residual": 0},
+            },
+        }
+        with patch.object(bench, "run_bench", new=AsyncMock(return_value=outcome)):
+            self.assertEqual(
+                bench.main(["--certify", "--iterations", "1", "--warmup", "0"]),
+                1,
+            )
+        with patch.object(bench, "run_bench", new=AsyncMock(return_value=outcome)):
+            self.assertEqual(
+                bench.main(["--run", "--iterations", "1", "--warmup", "0"]),
+                0,
+            )
 
     def test_capability_fingerprint_is_stable(self) -> None:
         first = build_capabilities(bridge_connected=True, live_model=True)["capability_fingerprint"]

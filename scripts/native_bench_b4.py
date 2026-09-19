@@ -11,12 +11,16 @@ Usage:
     python scripts/native_bench_b4.py --probe [--host H] [--port P] [--timeout S]
     python scripts/native_bench_b4.py --run [--iterations N] [--warmup W]
         [--host H] [--port P] [--timeout S] [--report path.json]
+    python scripts/native_bench_b4.py --certify [--iterations N] [--warmup W]
+        [--host H] [--port P] [--timeout S] [--report path.json]
 
 Default report path is outside the repo (system Temp directory).
 
-Exit codes: 0 completed (report written, even with per-iteration errors
-recorded) | 2 bridge unavailable. No live workload is executed on probe
-failure; fixtures always self-cleanup (0 residual entities expected).
+Exit codes: --run remains report-only and returns 0 when the benchmark
+completed with a live bridge, even if per-iteration errors were recorded.
+--certify returns 0 only when every workload has zero errors, the over-budget
+probe is fail-closed without a crash, and cleanup residual is zero; violations
+return 1. Bridge/probe unavailability returns 2.
 """
 
 from __future__ import annotations
@@ -291,6 +295,43 @@ async def run_workload(name: str, iterations: int, warmup: int, body) -> dict:
     return summary
 
 
+def certification_violations(report: dict) -> list[str]:
+    """Return deterministic hard-gate violations for one B4 report."""
+    violations: list[str] = []
+
+    workloads = report.get("workloads")
+    if not isinstance(workloads, dict) or not workloads:
+        violations.append("workloads_missing")
+    else:
+        for name, summary in workloads.items():
+            if not isinstance(summary, dict):
+                violations.append(f"workload_errors:{name}=invalid")
+                continue
+            errors = summary.get("errors")
+            if errors != 0:
+                violations.append(f"workload_errors:{name}={errors!r}")
+
+    over_budget = report.get("over_budget")
+    if not isinstance(over_budget, dict):
+        violations.append("fail_closed:missing")
+    else:
+        if over_budget.get("fail_closed") is not True:
+            violations.append(
+                f"fail_closed:{over_budget.get('fail_closed')!r}"
+            )
+        if over_budget.get("crashed") is not False:
+            violations.append(
+                f"over_budget_crashed:{over_budget.get('crashed')!r}"
+            )
+
+    cleanup = report.get("cleanup")
+    residual = cleanup.get("residual") if isinstance(cleanup, dict) else None
+    if residual != 0:
+        violations.append(f"cleanup_residual:{residual!r}")
+
+    return violations
+
+
 async def probe_only(host: str, port: int, timeout: float) -> dict:
     client = BridgeClient(host=host, port=port, timeout=timeout)
     probe = await client.probe()
@@ -519,7 +560,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--probe", action="store_true",
                         help="ping the bridge and exit")
     parser.add_argument("--run", action="store_true",
-                        help="run the benchmark matrix")
+                        help="run benchmark in report-only mode")
+    parser.add_argument(
+        "--certify",
+        action="store_true",
+        help="run benchmark and fail non-zero on acceptance violations",
+    )
     parser.add_argument("--iterations", type=int, default=20,
                         help="timed iterations per workload (default 20)")
     parser.add_argument("--warmup", type=int, default=3,
@@ -541,11 +587,27 @@ def main(argv=None) -> int:
         probe = asyncio.run(probe_only(args.host, args.port, args.timeout))
         ok = bool(probe.get("bridge_connected") and probe.get("live_model"))
         return 0 if ok else 2
-    if args.run:
+    if args.run or args.certify:
         outcome = asyncio.run(run_bench(
             args.host, args.port, args.timeout,
             args.iterations, args.warmup, args.report))
-        return 0 if outcome.get("bridge_available") else 2
+        if not outcome.get("bridge_available"):
+            return 2
+        if args.certify:
+            report = outcome.get("report")
+            violations = (
+                certification_violations(report)
+                if isinstance(report, dict)
+                else ["report_missing"]
+            )
+            if violations:
+                print(
+                    "B4 certification FAILED: " + ", ".join(violations),
+                    file=sys.stderr,
+                )
+                return 1
+            print("B4 certification PASS")
+        return 0
     build_parser().print_help()
     return 2
 
