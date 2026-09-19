@@ -324,6 +324,19 @@ class SemanticBridgeTests(unittest.TestCase):
         self.assertIn("target_context: dict[str, Any] | None = None", server_source)
         self.assertIn('payload["target_context"] = target_context', server_source)
 
+    def test_target_context_mutation_identity_uses_outer_logical_request(self) -> None:
+        source = read_extension_sources()
+        handler = source.index("def handle_execute_geometry(")
+        mutation_check = source.index("mutation_check(identity_params, model)", handler)
+        targeted = source.index("run_targeted_geometry_in_context(", handler)
+        self.assertLess(mutation_check, targeted)
+        self.assertIn("identity_params = mutation_identity || params", source)
+        self.assertIn(
+            "mutation_identity: mutation_identity,\n          mutation_prechecked: true",
+            source,
+        )
+        self.assertIn("journalize_mutation(\n            identity_params, model,", source)
+
     def test_if_match_checks_target_semantic_fingerprint_before_mutation(self) -> None:
         source = read_extension_sources()
         self.assertIn("precondition_target_pid", source)

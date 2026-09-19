@@ -242,7 +242,7 @@ Offline tests:
 python -m unittest discover -s tests -v
 ```
 
-The current Linux/gateway automated suite is **237 passed, 2 skipped**. The skips are environment-specific optional checks and do not suppress contract coverage.
+The current Linux/gateway automated suite is **238 passed, 2 skipped**. The skips are environment-specific optional checks and do not suppress contract coverage.
 
 The broad native baseline remains contract `0.28`; contract `0.30` recovery additions are separately live-accepted on SketchUp 2024 `24.0.594` / Ruby `3.2.2`. The public surface contains **68 MCP tools**. The measured 0.28 matrix covers nested three-level edits and context restoration, strong asset identity and exact-definition reuse/drift rejection, Engineer catalog-resolver integration, bounded mesh realization for tetra/frustum/multi-section loft/ellipsoid/rounded/open-molding cases, mesh budget/malformed-input fail-before-mutation and verified rollback, bounded spatial disjoint/touching/penetrating/rotated queries within the documented `1e-7` native-inch and `1024`-triangle / `1048576` pair-test envelope, non-manifold/budget fail-closed behavior, uncertain-completion reconciliation and compensation, content-addressed artifact seal/staleness/reseal, save/reopen verification and instance-specific `make_unique` isolation. Earlier measured topology/copy/unit/texture/camera/scene/document/integrity paths remain part of the supported SketchUp-2024 baseline.
 

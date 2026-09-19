@@ -167,7 +167,7 @@ module CDTSketchUp
       }
     end
 
-    def run_targeted_geometry_in_context(model, params)
+    def run_targeted_geometry_in_context(model, params, mutation_identity:)
       original_path = (model.active_path || []).dup
       original_path_ids = original_path.map(&:persistent_id)
       caller_snapshot = semantic_active_entity_snapshot(model)
@@ -187,7 +187,11 @@ module CDTSketchUp
       restoration = nil
       begin
         activate_target_edit_context(model, target_path, target_path_ids) unless target_path_ids == original_path_ids
-        result = handle_execute_geometry(inner_params)
+        result = run_execute_geometry(
+          inner_params,
+          mutation_identity: mutation_identity,
+          mutation_prechecked: true
+        )
       rescue BridgeError => error
         execution_error = error
       rescue StandardError => error
@@ -234,17 +238,32 @@ module CDTSketchUp
     end
 
     def handle_execute_geometry(params)
+      run_execute_geometry(
+        params,
+        mutation_identity: nil,
+        mutation_prechecked: false
+      )
+    end
+
+    def run_execute_geometry(params, mutation_identity:, mutation_prechecked:)
       started_at = monotonic_now
       receipt_id = SecureRandom.uuid
       model = require_model
+      identity_params = mutation_identity || params
+      unless mutation_prechecked
+        replay = mutation_check(identity_params, model)
+        return replay unless replay.nil?
+      end
       if params.key?("target_context") && !params["target_context"].nil?
-        return run_targeted_geometry_in_context(model, params)
+        return run_targeted_geometry_in_context(
+          model,
+          params,
+          mutation_identity: identity_params
+        )
       end
       action = params["action"]
       unit_info = resolve_public_unit(model, params["unit"] || "in")
       coordinate_space = validate_coordinate_space(params["coordinate_space"] || "active_context")
-      replay = mutation_check(params, model)
-      return replay unless replay.nil?
       action_params, expect = normalize_geometry_request_units(
         action,
         params["params"],
@@ -326,7 +345,7 @@ module CDTSketchUp
             coordinate_space: coordinate_space
           )
           return journalize_mutation(
-            params, model,
+            identity_params, model,
             rollback_journal_status(rollback_receipt),
             rollback_receipt
           )
@@ -342,7 +361,7 @@ module CDTSketchUp
         end
         operation_open = false
         journalize_mutation(
-          params, model,
+          identity_params, model,
           "committed",
           build_operation_receipt(
           model,
@@ -383,7 +402,7 @@ module CDTSketchUp
           }
         )
         journalize_mutation(
-          params, model,
+          identity_params, model,
           rollback_journal_status(rollback_receipt),
           rollback_receipt
         )
@@ -409,7 +428,7 @@ module CDTSketchUp
           }
         )
         journalize_mutation(
-          params, model,
+          identity_params, model,
           rollback_journal_status(rollback_receipt),
           rollback_receipt
         )
