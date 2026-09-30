@@ -13,6 +13,9 @@ dependencies = [
   "uvicorn>=0.35,<1",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.4,<9", "pytest-subtests>=0.15,<1", "ruff>=0.16,<1"]
+
 [project.scripts]
 cdt-sketchup = "cdt_sketchup.server:main"
 cdt-sketchup-doctor = "cdt_sketchup.doctor:main"

@@ -102,7 +102,18 @@ def check_python() -> Check:
         import uvicorn  # noqa: F401
     except ImportError:
         return Check("python", False, "uvicorn package is not installed")
-    return Check("python", True, f"{platform.python_version()} with mcp+uvicorn")
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        versions = {name: version(name) for name in ("mcp", "uvicorn")}
+        mcp_release = tuple(int(part) for part in versions["mcp"].split(".")[:2])
+        uvicorn_release = tuple(int(part) for part in versions["uvicorn"].split(".")[:2])
+        compatible = (2, 2) <= mcp_release < (3, 0) and (0, 35) <= uvicorn_release < (1, 0)
+    except (PackageNotFoundError, ValueError):
+        return Check("python", False, "dependency versions cannot be verified")
+    if not compatible:
+        return Check("python", False, "requires mcp>=2.2,<3 and uvicorn>=0.35,<1")
+    return Check("python", True, f"{platform.python_version()} with mcp {versions['mcp']} / uvicorn {versions['uvicorn']}")
 
 
 def check_extension_sources() -> Check:
@@ -128,12 +139,19 @@ def check_extension_installed() -> Check:
     if root is None:
         return Check("extension-installed", True, "installed (source tree unavailable for comparison)")
     try:
-        same = file_sha256(target) == file_sha256(root / "extension" / "cdt_sketchup" / "main.rb")
+        source_root = root / "extension"
+        expected = [source_root / "cdt_sketchup.rb", *sorted((source_root / "cdt_sketchup").rglob("*.rb"))]
+        for source in expected:
+            installed = plugins_dir() / source.relative_to(source_root)
+            if not installed.is_file() or file_sha256(installed) != file_sha256(source):
+                return Check("extension-installed", False, f"missing or changed: {source.relative_to(source_root).as_posix()}")
+        expected_modules = {p.relative_to(source_root / "cdt_sketchup") for p in expected[1:]}
+        installed_modules = {p.relative_to(plugins_dir() / "cdt_sketchup") for p in (plugins_dir() / "cdt_sketchup").rglob("*.rb")}
+        if installed_modules != expected_modules:
+            return Check("extension-installed", False, "installed extension has unexpected Ruby modules")
     except OSError as exc:
         return Check("extension-installed", False, f"unreadable: {exc}")
-    if not same:
-        return Check("extension-installed", False, "installed main.rb differs from repository")
-    return Check("extension-installed", True, "installed files match repository")
+    return Check("extension-installed", True, f"loader and {len(expected) - 1} Ruby modules match repository")
 
 
 def check_bridge_token() -> Check:

@@ -5,6 +5,11 @@ SketchUp-native MCP provider implementing a **Generic CAD Primitive / Execution 
 > Current provider version: `0.1.0` · Contract: `0.31`
 > Broad native feature acceptance remains rooted in contract `0.28`; the contract `0.30` recovery additions are live-accepted on SketchUp 2024 `24.0.594` / Ruby `3.2.2`.
 > Retry-sensitive callers use `execute_geometry(operation_id=...)`; ambiguous completion returns `unknown_commit`, then `reconcile_operation(operation_id)` decides whether replay/retry is safe.
+>
+> **CDT certified host target:** SketchUp **2024 24.0.594 / Ruby 3.2.2**.
+> Current acceptance and quality scoring are bound to this target only. Other
+> SketchUp releases are unverified compatibility candidates that may be added
+> later; they are not implied supported today and carry no score penalty.
 
 ## What it is
 

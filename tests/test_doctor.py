@@ -48,6 +48,27 @@ class DoctorTests(unittest.TestCase):
                 self.assertEqual(doctor.uninstall_extension(), 0)
                 self.assertFalse((plugins / "cdt_sketchup").exists())
 
+    def test_installed_nested_module_drift_is_not_reported_as_matching(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugins = Path(tmpdir) / "Plugins"
+            with unittest.mock.patch.dict(os.environ, {"CDT_SKETCHUP_PLUGINS_DIR": str(plugins)}):
+                self.assertEqual(doctor.install_extension(), 0)
+                module = plugins / "cdt_sketchup" / "kernel" / "mutation_journal.rb"
+                module.write_text(module.read_text(encoding="utf-8") + "\n# stale installation\n", encoding="utf-8")
+                self.assertFalse(doctor.check_extension_installed().passed)
+
+    def test_missing_loader_is_not_reported_as_matching(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plugins = Path(tmpdir) / "Plugins"
+            with unittest.mock.patch.dict(os.environ, {"CDT_SKETCHUP_PLUGINS_DIR": str(plugins)}):
+                self.assertEqual(doctor.install_extension(), 0)
+                (plugins / "cdt_sketchup.rb").unlink()
+                self.assertFalse(doctor.check_extension_installed().passed)
+
+    def test_wrong_mcp_major_is_not_a_healthy_python_environment(self) -> None:
+        with unittest.mock.patch("importlib.metadata.version", side_effect=lambda name: "1.30.0" if name == "mcp" else "0.35.0"):
+            self.assertFalse(doctor.check_python().passed)
+
     def test_support_bundle_never_contains_token_material(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             token = Path(tmpdir) / "bridge.token"

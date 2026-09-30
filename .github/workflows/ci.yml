@@ -10,7 +10,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            lock: pylock.linux.toml
+          - os: windows-latest
+            lock: pylock.windows.toml
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -18,12 +22,19 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install
-        run: python -m pip install . pytest
+          cache-dependency-path: ${{ matrix.lock }}
+      - name: Install exact environment
+        run: |
+          python -m pip install pip==26.1.2
+          python -m pip install -r ${{ matrix.lock }}
+          python -m pip install --no-deps --no-build-isolation .
+          python -m pip check
       - name: Test
         run: python -m pytest tests -q
       - name: Build reproducible RBZ
         run: python scripts/build_rbz.py --output dist/cdt-sketchup-bridge-0.1.0.rbz
+      - name: Installed dependency evidence
+        run: python -m pip freeze --all > dist/dependencies.txt
       - name: Release provenance manifest
         run: >
           python scripts/release_manifest.py
@@ -31,6 +42,8 @@ jobs:
           --evidence dist/cdt-sketchup-bridge-0.1.0.rbz
           --evidence scripts/native_bench_b4.py
           --evidence scripts/public_recovery_a05.py
+          --evidence ${{ matrix.lock }}
+          --evidence dist/dependencies.txt
           --require-clean
       - uses: actions/upload-artifact@v4
         with:
