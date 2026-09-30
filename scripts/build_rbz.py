@@ -30,6 +30,7 @@ def build(output: Path) -> Path:
                 source.relative_to(EXTENSION_ROOT).as_posix(),
                 date_time=(1980, 1, 1, 0, 0, 0),
             )
+            info.create_system = 3  # canonical Unix ZIP metadata on every build host
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
             archive.writestr(info, source.read_bytes())

@@ -95,6 +95,26 @@ class DoctorTests(unittest.TestCase):
             module.build(second)
             self.assertEqual(doctor.file_sha256(first), doctor.file_sha256(second))
 
+    def test_rbz_checksum_is_independent_of_zip_creator_platform(self) -> None:
+        spec = importlib.util.spec_from_file_location("build_rbz", REPO / "scripts" / "build_rbz.py")
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        original = module.zipfile.ZipInfo
+        with tempfile.TemporaryDirectory() as tmpdir:
+            linux = Path(tmpdir) / "linux.rbz"
+            windows = Path(tmpdir) / "windows.rbz"
+            module.build(linux)
+
+            class WindowsInfo(original):
+                def __init__(self, *args, **kwargs):
+                    super().__init__(*args, **kwargs)
+                    self.create_system = 0
+
+            with unittest.mock.patch.object(module.zipfile, "ZipInfo", WindowsInfo):
+                module.build(windows)
+            self.assertEqual(doctor.file_sha256(linux), doctor.file_sha256(windows))
+
     def test_doctor_offline_reports_structured_checks(self) -> None:
         checks, _code = doctor.run_doctor(live=False)
         names = [check.name for check in checks]
