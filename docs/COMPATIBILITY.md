@@ -9,7 +9,8 @@ This document lists **measured** compatibility only. Unmeasured newer SketchUp v
 | SketchUp Desktop | 2024 `24.0.594` | live accepted for current baseline |
 | SketchUp Ruby | `3.2.2` | live accepted |
 | Python | `3.10+` contract | package requirement |
-| MCP Python package | `>=2.2,<3` | package requirement |
+| MCP Python package | `>=2.2,<3` | package requirement; locked acceptance at `2.2.0` |
+| uvicorn | `>=0.35,<1` | package requirement; locked acceptance at `0.54.0` |
 
 The broad measured native baseline remains contract `0.28`; the current public source contract is `0.31` with **68 MCP tools**. Recovery additions from 0.29–0.30 are separately live-accepted on SketchUp 2024 `24.0.594` / Ruby `3.2.2`: caller-stable `execute_geometry.operation_id`, truthful `unknown_commit` after response loss, public `reconcile_operation`, non-replayable unknown journal state, verified-only `rolled_back`, and same-ID replay with no duplicate side effect. Contract 0.31 additionally corrects bounded semantic topology/manifold descent through single-container nested wrappers without flattening mixed/multi-solid structures. The acceptance fault-injects an actual response drop after the Ruby bridge has returned a committed receipt through the real Streamable HTTP MCP path, reconciles that same operation as committed, and proves active-entity count changes exactly once. In addition to this recovery evidence, the established 0.28 baseline covers bounded three-level `target_context` edits/restoration, SHA-256 + `native_version` asset binding/reuse/drift rejection, generic bounded indexed mesh creation, bounded manifold-solid clearance/overlap classification, content-addressed artifact sealing/verification, save/reopen evidence, and multi-step recovery/reconciliation. Spatial exactness is measured only at/above `1e-7` native inches and within the `1024`-triangle / `1048576` pair-test budgets; sub-epsilon interference may collapse to `touching` but is not reported clear.
 
@@ -17,6 +18,10 @@ The broad measured native baseline remains contract `0.28`; the current public s
 
 Explicit-unit acceptance on the same native runtime proves `25.4×50.8×76.2 mm` and `1×2×3 in` produce equivalent semantic geometry, `254/508/762 mm` transform translation reads back as `10/20/30 in`, `unit=model` resolves the active model unit, and unsupported coordinate spaces fail closed. Public Streamable HTTP MCP smoke also verified explicit-mm create, inch query, capability metadata, and strict cleanup.
 
+
+## Reproducible provider environment
+
+The 2026-09-30 acceptance used CPython 3.12.3 on Linux and 3.12.0 on Windows, with platform-specific PEP 751 locks. Source `69a0aaa` passed the fresh native recovery/composition/containment/document matrix on the declared host target. The spatial sub-epsilon case retains its conservative `touching` result. See [Reproducible baseline](REPRODUCIBLE_BASELINE.md) for installation and measured acceptance details. Linux verification covers the Python provider; native SketchUp execution was measured on Windows.
 
 ## Other SketchUp releases
 

@@ -42,6 +42,10 @@ Strict object delete remains limited to unlocked active-context Groups and Compo
 
 The current runtime includes limits for bridge frames, concurrent bridge clients, object scans, face point counts, semantic fingerprint complexity, nested-context depth, indexed-mesh vertices/faces/index references, exact-spatial triangulation/pair tests, registry hashing and artifact byte size. Limits may evolve as performance is measured; `system_capabilities` and public tool documentation are the authoritative released surface.
 
+## Installation integrity
+
+Use the [platform lock](REPRODUCIBLE_BASELINE.md) for the canonical Python environment. Doctor rejects dependency versions outside the declared ranges. With extension sources available in a checkout, it compares the installed loader and every Ruby module by hash, including detection of missing or unexpected modules. A wheel-only doctor without sources cannot certify this comparison. Installation hashes establish source equality; live handshake and native acceptance establish runtime behavior.
+
 ## Secrets
 
 Bridge and MCP bearer credentials must never be returned by MCP tools or written to normal logs. The repository must not contain credentials.

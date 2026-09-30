@@ -186,10 +186,12 @@ Machine geometry validation uses semantic model state, not viewport screenshots.
 
 - Python 3.10+
 - `mcp>=2.2,<3`
+- `uvicorn>=0.35,<1`
 - SketchUp Desktop with Ruby API
 - no third-party Ruby gems
 
-See [Compatibility](docs/COMPATIBILITY.md) for measured native support.
+See [Compatibility](docs/COMPATIBILITY.md) for measured native support and
+[Reproducible baseline](docs/REPRODUCIBLE_BASELINE.md) for locked installation.
 
 ## Build and install the SketchUp extension
 
@@ -247,11 +249,11 @@ Offline tests:
 python -m unittest discover -s tests -v
 ```
 
-The current Linux/gateway automated suite is **238 passed, 2 skipped**. The skips are environment-specific optional checks and do not suppress contract coverage.
+The 2026-09-30 locked CPython 3.12 baseline on `69a0aaa` is **242 passed, 2 skipped** on Linux and **244 passed** on Windows, with **5 subtests passed** on each. The Linux skips are optional checks requiring a standalone Ruby interpreter. The canonical CI/test command is `python -m pytest tests -q`; see the [reproducible baseline](docs/REPRODUCIBLE_BASELINE.md).
 
 The broad native baseline remains contract `0.28`; contract `0.30` recovery additions are separately live-accepted on SketchUp 2024 `24.0.594` / Ruby `3.2.2`. The public surface contains **68 MCP tools**. The measured 0.28 matrix covers nested three-level edits and context restoration, strong asset identity and exact-definition reuse/drift rejection, Engineer catalog-resolver integration, bounded mesh realization for tetra/frustum/multi-section loft/ellipsoid/rounded/open-molding cases, mesh budget/malformed-input fail-before-mutation and verified rollback, bounded spatial disjoint/touching/penetrating/rotated queries within the documented `1e-7` native-inch and `1024`-triangle / `1048576` pair-test envelope, non-manifold/budget fail-closed behavior, uncertain-completion reconciliation and compensation, content-addressed artifact seal/staleness/reseal, save/reopen verification and instance-specific `make_unique` isolation. Earlier measured topology/copy/unit/texture/camera/scene/document/integrity paths remain part of the supported SketchUp-2024 baseline.
 
-`cdt-sketchup-doctor` provides offline and live health checks (`doctor`, `doctor --live`), extension install/uninstall, token repair, and a sanitized `support-bundle` that never includes credential material. The RBZ build is byte-reproducible (fixed archive metadata).
+`cdt-sketchup-doctor` provides offline and live health checks (`doctor`, `doctor --live`), extension install/uninstall, token repair, and a sanitized `support-bundle` that never includes credential material. Source-checkout doctor verification compares the loader and all Ruby modules, rejects module drift and checks dependency versions. The RBZ build fixes archive metadata, including creator platform, and produces the same bytes on the tested Linux/Windows baseline.
 
 ## Public documentation
 
@@ -260,5 +262,6 @@ The broad native baseline remains contract `0.28`; contract `0.30` recovery addi
 - [Security](docs/SECURITY.md)
 - [Tool Guide](docs/TOOL_GUIDE.md)
 - [Compatibility](docs/COMPATIBILITY.md)
+- [Reproducible baseline](docs/REPRODUCIBLE_BASELINE.md)
 
 Public product use does not depend on local development plans or session handoff files.

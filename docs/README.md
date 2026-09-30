@@ -6,5 +6,6 @@ Public documentation contains only stable product and integration material. Inte
 - [Security](SECURITY.md) — trust boundaries, deployment requirements and safety model.
 - [Tool Guide](TOOL_GUIDE.md) — currently released MCP tools and semantics.
 - [Compatibility](COMPATIBILITY.md) — measured runtime/version support.
+- [Reproducible baseline](REPRODUCIBLE_BASELINE.md) — platform locks, installation, doctor and packaging.
 
 For product use, no document outside this public set is required.
