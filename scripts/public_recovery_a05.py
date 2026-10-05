@@ -29,21 +29,31 @@ from pathlib import Path
 from typing import Any
 
 import uvicorn
-from mcp import Client
+
+try:
+    from mcp import Client
+except ImportError as exc:
+    raise RuntimeError(
+        "scripts/public_recovery_a05.py requires mcp==2.2.0 (Client API); "
+        "the installed mcp major is incompatible. "
+        "Create a fresh Python 3.12 virtual environment and install "
+        "the platform lock (pylock.windows.toml on Windows, "
+        "pylock.linux.toml on Linux). "
+        "See docs/REPRODUCIBLE_BASELINE.md."
+    ) from exc
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from cdt_sketchup import server as provider  # noqa: E402
-from cdt_sketchup.bridge import (  # noqa: E402
-    BridgeClient,
+from cdt_sketchup import server as provider
+from cdt_sketchup.bridge import (
     DEFAULT_BRIDGE_HOST,
     DEFAULT_BRIDGE_PORT,
     MAX_FRAME_BYTES,
+    BridgeClient,
 )
-from cdt_sketchup.contract import CONTRACT_VERSION  # noqa: E402
-from cdt_sketchup.mutation import new_mutation_id  # noqa: E402
-
+from cdt_sketchup.contract import CONTRACT_VERSION
+from cdt_sketchup.mutation import new_mutation_id
 
 UNIT = "mm"
 TIMEOUT_SECONDS = 10.0

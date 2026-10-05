@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from extension_tree import (  # noqa: E402
+from extension_tree import (
     EXTENSION_ROOT,
     MAIN_RB,
     extension_ruby_files,
@@ -94,7 +94,7 @@ class ModularTreeTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, f"{path}: {completed.stderr}")
 
     def test_rbz_build_includes_every_module(self) -> None:
-        import importlib.util  # noqa: E402
+        import importlib.util
 
         script = Path(__file__).resolve().parents[1] / "scripts" / "build_rbz.py"
         spec = importlib.util.spec_from_file_location("build_rbz", script)

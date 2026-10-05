@@ -5,12 +5,11 @@ Wing: code | Topic: sketchup_spatial | Updated: 2026-09-17 11:45
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import textwrap
 import unittest
-
+from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 LIMITS = REPO / "extension" / "cdt_sketchup" / "kernel" / "limits.rb"

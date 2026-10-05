@@ -17,14 +17,14 @@ import os
 import platform
 import subprocess
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from cdt_sketchup.capabilities import CAPABILITY_FINGERPRINT  # noqa: E402
-from cdt_sketchup.contract import CONTRACT_VERSION, PROVIDER_VERSION  # noqa: E402
+from cdt_sketchup.capabilities import CAPABILITY_FINGERPRINT
+from cdt_sketchup.contract import CONTRACT_VERSION, PROVIDER_VERSION
 
 
 def _git(*args: str) -> str:

@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cdt_sketchup import doctor  # noqa: E402
+from cdt_sketchup import doctor
 
 REPO = Path(__file__).resolve().parents[1]
 

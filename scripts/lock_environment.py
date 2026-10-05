@@ -4,8 +4,9 @@ from __future__ import annotations
 import importlib.metadata
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 PIP_VERSION = "26.1.2"

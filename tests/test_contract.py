@@ -11,11 +11,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cdt_sketchup.capabilities import (  # noqa: E402
+from cdt_sketchup.capabilities import (
     CAPABILITY_DESCRIPTORS,
     capability_fingerprint,
 )
-from cdt_sketchup.contract import (  # noqa: E402
+from cdt_sketchup.contract import (
     COMMON_CONTRACT_VERSION,
     CONTRACT_VERSION,
     PROVIDER_ID,

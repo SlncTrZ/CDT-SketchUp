@@ -4,9 +4,9 @@ Wing: code | Topic: sketchup_capability_metadata | Updated: 2026-09-11 19:58
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import hashlib
 import json
+from dataclasses import asdict, dataclass
 from typing import Any
 
 CAPABILITY_SCHEMA_VERSION = 2

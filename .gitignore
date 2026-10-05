@@ -36,3 +36,6 @@ tmp/
 
 # Internal development control
 _private/
+
+# Agent-local config (Global Protocol: never commit project-level AGENTS.md)
+/AGENTS.md

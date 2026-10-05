@@ -16,15 +16,16 @@ from unittest.mock import AsyncMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cdt_sketchup import capabilities as capability_module  # noqa: E402
-from cdt_sketchup import doctor  # noqa: E402
-from cdt_sketchup.contract import (  # noqa: E402
+from extension_tree import EXTENSION_ROOT, read_extension_sources
+
+from cdt_sketchup import capabilities as capability_module
+from cdt_sketchup import doctor
+from cdt_sketchup.contract import (
     CONTRACT_VERSION,
     PROVIDER_VERSION,
     build_capabilities,
     build_help,
 )
-from extension_tree import EXTENSION_ROOT, read_extension_sources  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 

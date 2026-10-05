@@ -265,3 +265,13 @@ The broad native baseline remains contract `0.28`; contract `0.30` recovery addi
 - [Reproducible baseline](docs/REPRODUCIBLE_BASELINE.md)
 
 Public product use does not depend on local development plans or session handoff files.
+
+## Gateway-controlled execution lifecycle
+
+Integration target: an authorized lifecycle controller ensures the native runtime, verifies readiness, syncs the already-registered gateway provider, verifies activation, and refreshes client tools/list. The lifecycle tools are not implemented or advertised by this provider merely because this guide exists. A stopped engine must not be the only endpoint capable of starting itself.
+
+Require a compatible SketchUp 2024 interactive session, the authenticated Ruby extension and verified model/context identity. Retain caller predecessor guards and reconcile_operation; the RAM operation journal is not durable across application restart. Stop must protect unsaved models.
+
+Stop/drain requires verified ownership, no unresolved mutation and explicit dirty-document handling. Do not kill all application processes or silently discard work. Gateway hot activation does not require a gateway restart and may change the provider generation.
+
+Interface reference: [CDT_Engineer Execution Lifecycle Contract](https://github.com/SlncTrZ/CDT_Engineer/blob/main/docs/EXECUTION_LIFECYCLE_CONTRACT.md). The contract is a draft target and is not published by this documentation-only workspace update; it is available in the sibling CDT_Engineer checkout. Existing pinned `specs/**` remain unchanged.

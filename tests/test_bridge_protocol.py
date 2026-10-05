@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cdt_sketchup.bridge import (  # noqa: E402
+from cdt_sketchup.bridge import (
     MAX_FRAME_BYTES,
     BridgeProtocolError,
     build_request,

@@ -12,10 +12,20 @@ from unittest.mock import ANY, AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from mcp import Client  # noqa: E402
+try:
+    from mcp import Client
+except ImportError as exc:
+    raise RuntimeError(
+        "tests/test_server.py requires mcp==2.2.0 (Client API); "
+        "the installed mcp major is incompatible. "
+        "Create a fresh Python 3.12 virtual environment and install "
+        "the platform lock (pylock.windows.toml on Windows, "
+        "pylock.linux.toml on Linux). "
+        "See docs/REPRODUCIBLE_BASELINE.md."
+    ) from exc
 
-from cdt_sketchup.bridge import BridgeResponseLostError  # noqa: E402
-from cdt_sketchup.server import (  # noqa: E402
+from cdt_sketchup.bridge import BridgeResponseLostError
+from cdt_sketchup.server import (
     BearerAuthMiddleware,
     create_app,
     mcp,
@@ -1351,9 +1361,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "CDT_SKETCHUP_MCP_TOKEN": "too-short",
             },
             clear=False,
-        ):
-            with self.assertRaisesRegex(RuntimeError, "at least 32"):
-                create_app()
+        ), self.assertRaisesRegex(RuntimeError, "at least 32"):
+            create_app()
 
     def test_non_loopback_bind_requires_bearer_token(self) -> None:
         with patch.dict(
@@ -1364,9 +1373,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "CDT_SKETCHUP_ALLOWED_HOSTS": "mcp.example.test",
             },
             clear=False,
-        ):
-            with self.assertRaisesRegex(RuntimeError, "MCP_TOKEN"):
-                create_app()
+        ), self.assertRaisesRegex(RuntimeError, "MCP_TOKEN"):
+            create_app()
 
     def test_non_loopback_bind_requires_host_allowlist(self) -> None:
         with patch.dict(
@@ -1377,9 +1385,8 @@ class MCPServerTests(unittest.IsolatedAsyncioTestCase):
                 "CDT_SKETCHUP_ALLOWED_HOSTS": "",
             },
             clear=False,
-        ):
-            with self.assertRaisesRegex(RuntimeError, "ALLOWED_HOSTS"):
-                create_app()
+        ), self.assertRaisesRegex(RuntimeError, "ALLOWED_HOSTS"):
+            create_app()
 
     def test_non_loopback_app_is_bearer_guarded(self) -> None:
         with patch.dict(

@@ -4,8 +4,8 @@ Wing: code | Topic: sketchup_s1 | Updated: 2026-09-09 23:12
 
 from __future__ import annotations
 
-import unittest
 import sys
+import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,7 +13,7 @@ MAIN_RB = ROOT / "extension" / "cdt_sketchup" / "main.rb"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from extension_tree import read_extension_sources  # noqa: E402
+from extension_tree import read_extension_sources
 
 
 class S1ExtensionTests(unittest.TestCase):

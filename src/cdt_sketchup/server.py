@@ -7,10 +7,21 @@ from __future__ import annotations
 import hmac
 import math
 import os
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
-from mcp.server import MCPServer
-from mcp.server.transport_security import TransportSecuritySettings
+try:
+    from mcp.server import MCPServer
+    from mcp.server.transport_security import TransportSecuritySettings
+except ImportError as exc:
+    raise RuntimeError(
+        "CDT-SketchUp requires mcp==2.2.0 (MCPServer API); "
+        "the installed mcp major is incompatible. "
+        "Create a fresh Python 3.12 virtual environment and install "
+        "the platform lock (pylock.windows.toml on Windows, "
+        "pylock.linux.toml on Linux). "
+        "See docs/REPRODUCIBLE_BASELINE.md."
+    ) from exc
 
 from .bridge import (
     BridgeClient,
@@ -18,7 +29,6 @@ from .bridge import (
     BridgeResponseLostError,
     BridgeUnavailableError,
 )
-from .mutation import mutation_envelope, new_mutation_id, valid_mutation_id
 from .contract import (
     PROVIDER_NAME,
     PROVIDER_VERSION,
@@ -26,7 +36,7 @@ from .contract import (
     build_help,
     build_status,
 )
-
+from .mutation import mutation_envelope, new_mutation_id, valid_mutation_id
 from .units import (
     DEFAULT_COORDINATE_SPACE,
     DEFAULT_PUBLIC_UNIT,

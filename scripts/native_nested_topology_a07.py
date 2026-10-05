@@ -20,7 +20,6 @@ import asyncio
 import json
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -28,7 +27,7 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from cdt_sketchup.bridge import BridgeClient  # noqa: E402
+from cdt_sketchup.bridge import BridgeClient
 
 UNIT = "mm"
 

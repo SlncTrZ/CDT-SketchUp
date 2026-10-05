@@ -9,7 +9,7 @@ description = "Generic CAD execution engine for SketchUp over MCP"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "mcp>=2.2,<3",
+  "mcp==2.2.0",
   "uvicorn>=0.35,<1",
 ]
 
@@ -25,3 +25,10 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+ignore = ["BLE001", "TRY004", "PLW1510", "UP036", "ASYNC221", "S110", "S112", "ISC004", "RUF059", "F841"]

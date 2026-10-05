@@ -8,8 +8,9 @@ import asyncio
 import json
 import os
 import secrets
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 BRIDGE_PROTOCOL_VERSION = 1
 DEFAULT_BRIDGE_HOST = "127.0.0.1"

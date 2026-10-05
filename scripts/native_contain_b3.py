@@ -26,9 +26,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from cdt_sketchup.bridge import (  # noqa: E402
-    BridgeClient,
+from cdt_sketchup.bridge import (
     DEFAULT_BRIDGE_PORT,
+    BridgeClient,
     read_bridge_token,
 )
 
@@ -79,7 +79,7 @@ async def run(report_path: str | None) -> dict:
             await asyncio.sleep(0.05)
         slow_resp = slow.recv(4096)
         checks["slow_completed"] = bool(slow_resp)
-    except (ConnectionResetError, socket.timeout):
+    except (TimeoutError, ConnectionResetError):
         checks["slow_completed"] = False
     finally:
         slow.close()
@@ -101,7 +101,7 @@ async def run(report_path: str | None) -> dict:
                 data = ninth.recv(4096)
                 checks["ninth_close"] = "eof" if data == b"" else "data"
                 checks["ninth_rejected"] = data == b""
-            except socket.timeout:
+            except TimeoutError:
                 checks["ninth_close"] = "timeout"
                 checks["ninth_rejected"] = False
             except ConnectionResetError:

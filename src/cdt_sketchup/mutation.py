@@ -10,7 +10,8 @@ import math
 import re
 import secrets
 import struct
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 _MUTATION_ID_RE = re.compile(r"\A[0-9a-f]{32}\Z")
 
