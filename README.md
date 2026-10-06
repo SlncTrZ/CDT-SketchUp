@@ -185,7 +185,7 @@ Machine geometry validation uses semantic model state, not viewport screenshots.
 ## Requirements
 
 - Python 3.10+
-- `mcp>=2.2,<3`
+- `mcp==2.2.0`
 - `uvicorn>=0.35,<1`
 - SketchUp Desktop with Ruby API
 - no third-party Ruby gems
