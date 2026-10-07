@@ -36,7 +36,9 @@ from .contract import (
     build_help,
     build_status,
 )
+from .local_runtime import LocalSketchUpRuntimeAdapter
 from .mutation import mutation_envelope, new_mutation_id, valid_mutation_id
+from .runtime_port import SketchUpRuntimePort
 from .units import (
     DEFAULT_COORDINATE_SPACE,
     DEFAULT_PUBLIC_UNIT,
@@ -56,7 +58,27 @@ mcp = MCPServer(
         "CDT-SketchUp Ruby extension bridge. Capabilities fail closed."
     ),
 )
-_bridge = BridgeClient()
+_runtime: SketchUpRuntimePort = LocalSketchUpRuntimeAdapter(BridgeClient())
+# Backward-compatible alias: existing tests/tools patch `server._bridge`.
+# Both names point at the same S1 adapter object, so the seam and the
+# patch target stay in sync. New code should use get_runtime()/set_runtime().
+_bridge = _runtime
+
+
+def get_runtime() -> SketchUpRuntimePort:
+    """Return the active provider-side runtime (default: local loopback)."""
+    return _runtime
+
+
+def set_runtime(runtime: SketchUpRuntimePort) -> None:
+    """Swap the provider-side runtime (e.g. RemoteSketchUpRuntimeAdapter)."""
+    global _runtime, _bridge
+    from .remote_runtime import RemoteSketchUpRuntimeAdapter
+
+    if not isinstance(runtime, (SketchUpRuntimePort, RemoteSketchUpRuntimeAdapter)):
+        raise TypeError("set_runtime requires a SketchUpRuntimePort")
+    _runtime = runtime
+    _bridge = runtime
 
 
 def _error(kind: str, message: str, *, retryable: bool) -> dict[str, Any]:
@@ -84,7 +106,7 @@ async def _call_bridge(
         chosen_id = mutation_id if mutation_id is not None else new_mutation_id()
         body["mutation"] = mutation_envelope(chosen_id, body)
     try:
-        return await _bridge.call(command, body if params is not None else None)
+        return await _runtime.call(command, body if params is not None else None)
     except BridgeResponseLostError:
         if command == "execute_geometry":
             return _error(
@@ -193,14 +215,14 @@ def help() -> dict[str, Any]:
 @mcp.tool()
 async def system_status() -> dict[str, Any]:
     """Probe live bridge/model readiness without mutating SketchUp."""
-    probe = await _bridge.probe()
+    probe = await _runtime.probe()
     return build_status(**probe)
 
 
 @mcp.tool()
 async def system_capabilities() -> dict[str, Any]:
     """Return capability declarations derived from current live state."""
-    probe = await _bridge.probe()
+    probe = await _runtime.probe()
     return build_capabilities(
         bridge_connected=probe["bridge_connected"],
         live_model=probe["live_model"],
