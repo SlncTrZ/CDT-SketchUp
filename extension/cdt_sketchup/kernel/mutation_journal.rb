@@ -224,41 +224,50 @@ module CDTSketchUp
     end
 
     def reconcile_entity_proof(model, wanted)
-      return true if wanted.nil?
-      return false unless wanted.is_a?(Hash)
+      return false unless wanted.is_a?(Hash) && !wanted.empty?
 
       proof = true
       wanted.each do |pid_key, wanted_fp|
+        return false unless wanted_fp.is_a?(String) && !wanted_fp.empty?
         pid = nil
         begin
           pid = Integer(pid_key)
         rescue ArgumentError, TypeError
           pid = nil
         end
-        entity = pid.nil? ? nil : resolve_reconcile_entity(model, pid)
-        if entity.nil?
-          proof = false
-          break
-        end
+        return false if pid.nil?
+        entity = resolve_reconcile_entity(model, pid)
+        return false if entity.nil?
         state = semantic_entity_state(model, entity)
-        if state["semantic_fingerprint"] != wanted_fp
-          proof = false
-          break
-        end
+        return false if state["semantic_fingerprint"] != wanted_fp
       end
       proof
     end
 
     def reconcile_proof_matches(model, expect_post)
-      return true if expect_post.nil?
-      return false unless expect_post.is_a?(Hash)
+      return false unless expect_post.is_a?(Hash) && !expect_post.empty?
+      has_model_fp = expect_post.key?("model_fingerprint")
+      has_entity_fps = expect_post.key?("entity_fingerprints")
+      return false unless has_model_fp || has_entity_fps
+
+      if has_model_fp
+        mfp = expect_post["model_fingerprint"]
+        return false unless mfp.is_a?(String) && !mfp.empty?
+      end
+      if has_entity_fps
+        efp = expect_post["entity_fingerprints"]
+        return false unless efp.is_a?(Hash) && !efp.empty?
+      end
 
       snapshot = semantic_active_entity_snapshot(model)
       fingerprint = semantic_model_fingerprint(model, active_snapshot: snapshot)
-      if expect_post.key?("model_fingerprint")
+      if has_model_fp
         return false unless expect_post["model_fingerprint"] == fingerprint
       end
-      reconcile_entity_proof(model, expect_post["entity_fingerprints"])
+      if has_entity_fps
+        return false unless reconcile_entity_proof(model, expect_post["entity_fingerprints"])
+      end
+      true
     end
 
   end

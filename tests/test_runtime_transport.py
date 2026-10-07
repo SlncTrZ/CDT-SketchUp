@@ -336,5 +336,94 @@ class S4MutationFaultTests(unittest.IsolatedAsyncioTestCase):
             a2.stop()
 
 
+class RemoteErrorContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_native_response_loss_preserves_unknown_commit(self) -> None:
+        from cdt_sketchup import server
+        from cdt_sketchup.bridge import BridgeResponseLostError
+
+        fake = FakePort({"execute_geometry": BridgeResponseLostError("reply lost")})
+        agent, transport, adapter = _make_remote(fake)
+        previous = server.get_runtime()
+        server.set_runtime(adapter)
+        try:
+            result = await server._call_bridge("execute_geometry", {"action": "x"})
+        finally:
+            server.set_runtime(previous)
+            agent.stop()
+            await transport.close()
+        self.assertEqual(result["error"]["kind"], "unknown_commit")
+        self.assertFalse(result["error"]["retryable"])
+        self.assertEqual(len(fake.calls), 1)
+
+    async def test_native_unavailable_and_refusal_keep_public_error_contract(self) -> None:
+        from cdt_sketchup import server
+        from cdt_sketchup.bridge import BridgeRemoteError, BridgeUnavailableError
+
+        cases = [
+            (BridgeUnavailableError("bridge offline"), "live_bridge_unavailable", True),
+            (BridgeRemoteError("context_mismatch: stale context"), "context_mismatch", False),
+        ]
+        for failure, kind, retryable in cases:
+            with self.subTest(kind=kind):
+                fake = FakePort({"document_info": failure})
+                agent, transport, adapter = _make_remote(fake)
+                previous = server.get_runtime()
+                server.set_runtime(adapter)
+                try:
+                    result = await server.document_info()
+                finally:
+                    server.set_runtime(previous)
+                    agent.stop()
+                    await transport.close()
+                self.assertEqual(result["error"]["kind"], kind)
+                self.assertEqual(result["error"]["retryable"], retryable)
+                self.assertEqual(len(fake.calls), 1)
+
+    async def test_generation_and_auth_refusals_are_public_errors_without_dispatch(self) -> None:
+        from cdt_sketchup import server
+
+        for fault, kind in [
+            ("generation", "runtime_generation_mismatch"),
+            ("auth", "runtime_authentication_error"),
+        ]:
+            with self.subTest(fault=fault):
+                fake = FakePort({"document_info": {}})
+                agent, transport, adapter = _make_remote(fake)
+                if fault == "generation":
+                    adapter.pin_generation("stale-generation")
+                else:
+                    transport._auth_token = "invalid-fixture-value"
+                previous = server.get_runtime()
+                server.set_runtime(adapter)
+                try:
+                    result = await server.document_info()
+                finally:
+                    server.set_runtime(previous)
+                    agent.stop()
+                    await transport.close()
+                self.assertEqual(result["error"]["kind"], kind)
+                self.assertFalse(result["error"]["retryable"])
+                self.assertEqual(fake.calls, [])
+
+    async def test_remaining_transport_errors_are_normalized(self) -> None:
+        from unittest.mock import patch
+        from cdt_sketchup import server
+        from cdt_sketchup.runtime_transport import RuntimeTransportError
+
+        for failure, kind in [
+            (RuntimeUncertainError("lost after dispatch"), "unknown_commit"),
+            (RuntimeUnavailableError("offline"), "live_bridge_unavailable"),
+            (RuntimeOpRefusedError("oversized"), "runtime_op_refused"),
+            (RuntimeTransportError("malformed"), "runtime_error"),
+        ]:
+            with self.subTest(kind=kind):
+                call = AsyncMock(side_effect=failure)
+                with patch.object(server.get_runtime(), "call", call):
+                    result = await server._call_bridge("execute_geometry", {"action": "x"})
+                self.assertEqual(result["error"]["kind"], kind)
+                self.assertEqual(result["error"]["retryable"], kind == "live_bridge_unavailable")
+                call.assert_awaited_once()
+
+
 if __name__ == "__main__":
     unittest.main()

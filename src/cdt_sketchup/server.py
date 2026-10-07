@@ -1,5 +1,5 @@
 """MCP Server — Streamable HTTP tools backed by the live SketchUp bridge.
-Wing: code | Topic: sketchup_semantic_loop | Updated: 2026-09-11 18:43
+Wing: code | Topic: sketchup_semantic_loop | Updated: 2026-10-07 22:21
 """
 
 from __future__ import annotations
@@ -39,6 +39,15 @@ from .contract import (
 from .local_runtime import LocalSketchUpRuntimeAdapter
 from .mutation import mutation_envelope, new_mutation_id, valid_mutation_id
 from .runtime_port import SketchUpRuntimePort
+from .runtime_transport import (
+    RuntimeAuthError,
+    RuntimeBridgeProtocolError,
+    RuntimeGenerationMismatchError,
+    RuntimeOpRefusedError,
+    RuntimeTransportError,
+    RuntimeUnavailableError,
+    RuntimeUncertainError,
+)
 from .units import (
     DEFAULT_COORDINATE_SPACE,
     DEFAULT_PUBLIC_UNIT,
@@ -107,7 +116,7 @@ async def _call_bridge(
         body["mutation"] = mutation_envelope(chosen_id, body)
     try:
         return await _runtime.call(command, body if params is not None else None)
-    except BridgeResponseLostError:
+    except (BridgeResponseLostError, RuntimeUncertainError):
         if command == "execute_geometry":
             return _error(
                 "unknown_commit",
@@ -119,15 +128,33 @@ async def _call_bridge(
             "Bridge response was lost; completion is unknown.",
             retryable=False,
         )
-    except BridgeUnavailableError:
+    except (BridgeUnavailableError, RuntimeUnavailableError):
         return _error(
             "live_bridge_unavailable",
             "SketchUp live bridge is unavailable.",
             retryable=True,
         )
-    except BridgeProtocolError as exc:
+    except (BridgeProtocolError, RuntimeBridgeProtocolError) as exc:
         kind = str(exc).partition(":")[0] or "bridge_error"
         return _error(kind, "SketchUp bridge rejected the operation.", retryable=False)
+    except RuntimeGenerationMismatchError:
+        return _error(
+            "runtime_generation_mismatch",
+            "SketchUp runtime generation changed; revalidate runtime identity before continuing.",
+            retryable=False,
+        )
+    except RuntimeAuthError:
+        return _error(
+            "runtime_authentication_error", "SketchUp runtime authentication failed.", retryable=False
+        )
+    except RuntimeOpRefusedError:
+        return _error(
+            "runtime_op_refused", "SketchUp runtime refused the operation.", retryable=False
+        )
+    except RuntimeTransportError:
+        return _error(
+            "runtime_error", "SketchUp runtime returned an invalid response.", retryable=False
+        )
 
 
 def _matrix_multiply(left: list[float], right: list[float]) -> list[float]:

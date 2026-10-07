@@ -1,6 +1,6 @@
 """Workstation SketchUp runtime agent — S2 loopback-only executor.
 
-Wing: code | Topic: sketchup_runtime_agent | Updated: 2026-10-07 18:35
+Wing: code | Topic: sketchup_runtime_agent | Updated: 2026-10-07 22:21
 
 Authenticated persistent listener owning the native side of the
 RuntimeTransport boundary. Minimal by design:
@@ -28,6 +28,7 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
+from .bridge import BridgeProtocolError, BridgeResponseLostError, BridgeUnavailableError
 from .runtime_transport import (
     ALLOWED_OPS,
     MAX_REQUEST_BYTES,
@@ -144,6 +145,17 @@ class WorkstationSketchUpRuntimeAgent:
                 result = self._run_bounded(target, (name, dict(params or {})), {}, bound_ms)
             except TimeoutError as exc:
                 return self._envelope(False, None, "dispatch_timeout_uncertain", str(exc), True)
+            except BridgeResponseLostError:
+                return self._envelope(
+                    False, None, "uncertain", "Native bridge response was lost after dispatch.", True
+                )
+            except BridgeUnavailableError:
+                return self._envelope(
+                    False, None, "unavailable", "Native SketchUp bridge is unavailable.", False
+                )
+            except BridgeProtocolError as exc:
+                kind = str(exc).partition(":")[0] or "bridge_error"
+                return self._envelope(False, None, "bridge_protocol_error", kind, False)
             except Exception as exc:
                 uncertain = bool(getattr(exc, "completion_unknown", False))
                 code = "uncertain" if uncertain else "backend_error"

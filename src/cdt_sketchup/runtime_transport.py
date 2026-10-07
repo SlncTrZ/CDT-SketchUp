@@ -1,6 +1,6 @@
 """SketchUp RuntimeTransport — provider/workstation boundary (S2).
 
-Wing: code | Topic: sketchup_runtime_transport | Updated: 2026-10-07 18:35
+Wing: code | Topic: sketchup_runtime_transport | Updated: 2026-10-07 22:21
 
 Typed bounded request/response between the MCP provider process and the
 workstation-side SketchUp runtime agent. Two implementations, one contract:
@@ -107,6 +107,10 @@ class RuntimeTransportError(RuntimeError):
     """Base class for typed runtime-boundary failures."""
 
 
+class RuntimeBridgeProtocolError(RuntimeTransportError):
+    """A complete native bridge rejection; preserves its public error kind."""
+
+
 class RuntimeUnavailableError(RuntimeTransportError):
     """Endpoint unreachable before dispatch — safe to report, never success."""
 
@@ -206,6 +210,8 @@ def raise_for_response(op: str, response: RuntimeResponse) -> Any:
         raise RuntimeGenerationMismatchError(message)
     if code in {"unknown_op", "op_refused", "oversized", "bad_request"}:
         raise RuntimeOpRefusedError(message)
+    if code == "bridge_protocol_error":
+        raise RuntimeBridgeProtocolError(message)
     if code in {"dispatch_timeout_uncertain", "uncertain"} or response.completion_unknown:
         raise RuntimeUncertainError(message)
     if code in {"dispatch_timeout_clean", "timeout_clean"}:

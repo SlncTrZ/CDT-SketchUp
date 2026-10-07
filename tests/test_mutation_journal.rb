@@ -157,6 +157,28 @@ check.call(
   server.send(:mutation_replay_receipt, unknown_entry).nil?
 )
 
+# Empty or contentless proof must never match
+check.call(
+  "entity proof nil rejected",
+  server.send(:reconcile_entity_proof, model, nil) == false
+)
+check.call(
+  "entity proof empty rejected",
+  server.send(:reconcile_entity_proof, model, {}) == false
+)
+check.call(
+  "proof matches nil rejected",
+  server.send(:reconcile_proof_matches, model, nil) == false
+)
+check.call(
+  "proof matches empty rejected",
+  server.send(:reconcile_proof_matches, model, {}) == false
+)
+check.call(
+  "proof matches empty entity_fingerprints rejected",
+  server.send(:reconcile_proof_matches, model, { "entity_fingerprints" => {} }) == false
+)
+
 puts "----"
 puts "passes=#{failures.empty? ? 'ALL' : 'SOME FAILED'}"
 exit(failures.empty? ? 0 : 1)
