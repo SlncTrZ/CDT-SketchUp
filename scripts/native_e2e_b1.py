@@ -31,7 +31,7 @@ sys.path.insert(0, str(REPO / "src"))
 from cdt_sketchup.bridge import BridgeClient
 
 UNIT = "mm"
-DEFAULT_FIXTURES = Path("H:/Develop/CDT_Engineer/domains/building-architecture/e2e-fixtures")
+DEFAULT_FIXTURES = Path("H:/Develop/SlncTrZ/CDT/CDT_Engineer/domains/building-architecture/e2e-fixtures")
 VALID_CASES = [
     "straight-rect-sweep",
     "tapered-quad-loft",
