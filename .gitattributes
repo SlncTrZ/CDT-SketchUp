@@ -1,0 +1,4 @@
+# Preserve source and lock bytes across Git checkout platforms.
+*.rb text eol=lf
+*.py text eol=lf
+*.toml text eol=lf
