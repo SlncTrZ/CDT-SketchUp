@@ -19,6 +19,8 @@ dev = ["pytest>=8.4,<9", "pytest-subtests>=0.15,<1", "ruff>=0.16,<1"]
 [project.scripts]
 cdt-sketchup = "cdt_sketchup.server:main"
 cdt-sketchup-doctor = "cdt_sketchup.doctor:main"
+cdt-sketchup-agent = "cdt_sketchup.agent_cli:main"
+cdt-sketchup-runtime = "cdt_sketchup.runtime_admin:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

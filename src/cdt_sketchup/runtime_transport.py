@@ -93,6 +93,7 @@ MUTATION_OPS: frozenset[str] = frozenset(
         "model_save_as",
         "model_open",
         "model_export",
+        "artifact_seal",
     }
 )
 
@@ -187,15 +188,33 @@ class RuntimeResponse:
 
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> RuntimeResponse:
-        if not isinstance(payload, dict):
-            raise RuntimeTransportError("malformed runtime response (not an object)")
+        if (
+            not isinstance(payload, dict)
+            or type(payload.get("ok")) is not bool
+            or type(payload.get("completion_unknown")) is not bool
+            or not isinstance(payload.get("generation"), str)
+            or not payload["generation"].strip()
+            or not isinstance(payload.get("error_code"), str)
+            or not payload["error_code"]
+            or not isinstance(payload.get("error_message"), str)
+            or "result" not in payload
+        ):
+            raise RuntimeTransportError("malformed runtime response envelope")
+        if payload["ok"] and (
+            payload["completion_unknown"]
+            or payload["error_code"] != "ok"
+            or payload["generation"] == "unbound"
+        ):
+            raise RuntimeTransportError("contradictory or unbound runtime success")
+        if not payload["ok"] and payload["error_code"] == "ok":
+            raise RuntimeTransportError("runtime failure has no error code")
         return cls(
-            ok=bool(payload.get("ok", False)),
-            result=payload.get("result"),
-            error_code=str(payload.get("error_code") or ("ok" if payload.get("ok") else "error")),
-            error_message=str(payload.get("error_message") or ""),
-            generation=str(payload.get("generation") or "unbound"),
-            completion_unknown=bool(payload.get("completion_unknown", False)),
+            ok=payload["ok"],
+            result=payload["result"],
+            error_code=payload["error_code"],
+            error_message=payload["error_message"],
+            generation=payload["generation"],
+            completion_unknown=payload["completion_unknown"],
         )
 
 
@@ -368,24 +387,30 @@ def _get_json(url: str, *, token: str, timeout_s: float) -> tuple[int, bytes]:
 
 
 def _decode_response(status: int, raw: bytes, *, op: str) -> RuntimeResponse:
-    if len(raw) > MAX_RESPONSE_BYTES:
-        raise RuntimeTransportError("runtime response oversized; discarded without trust")
+    # Only authoritative auth/route refusals prove native dispatch did not start.
     if status in (401, 403):
         raise RuntimeAuthError(f"runtime endpoint rejected credentials for op {op!r} (http {status})")
     if status == 404:
         raise RuntimeUnavailableError(f"runtime endpoint has no route for op {op!r}")
+    if len(raw) > MAX_RESPONSE_BYTES:
+        raise RuntimeUncertainError("runtime response oversized; completion is unknown")
     if status >= 500:
         raise RuntimeUncertainError(
             f"runtime endpoint error {status} for op {op!r} after dispatch; "
             "completion is unknown, blind retry is forbidden"
         )
-    if status >= 400:
-        raise RuntimeTransportError(f"runtime endpoint http {status} for op {op!r}")
     try:
         payload = json.loads(raw.decode("utf-8") or "{}")
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise RuntimeTransportError(f"malformed runtime response for op {op!r}") from exc
-    return RuntimeResponse.from_wire(payload)
+        response = RuntimeResponse.from_wire(payload)
+    except (ValueError, UnicodeDecodeError, RuntimeTransportError) as exc:
+        raise RuntimeUncertainError(
+            f"malformed runtime response for op {op!r}; completion is unknown"
+        ) from exc
+    if not 200 <= status < 300 and response.ok:
+        raise RuntimeUncertainError(
+            f"unverified runtime http {status} for op {op!r}; completion is unknown"
+        )
+    return response
 
 
 class RemoteSketchUpTransport(SketchUpRuntimeTransport):
@@ -454,8 +479,11 @@ class RemoteSketchUpTransport(SketchUpRuntimeTransport):
                 f"({exc}); completion is unknown, blind retry is forbidden"
             ) from exc
         response = await asyncio.to_thread(_decode_response, status, raw, op=request.op)
+        if not response.ok:
+            return raise_for_response(request.op, response)
         if request.expected_generation is not None and response.generation != request.expected_generation:
-            raise RuntimeGenerationMismatchError(
+            # Success from another generation cannot prove this mutation's completion.
+            raise RuntimeUncertainError(
                 f"runtime generation mismatch: expected {request.expected_generation!r}, "
                 f"got {response.generation!r}; result for op {request.op!r} discarded"
             )

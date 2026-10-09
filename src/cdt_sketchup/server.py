@@ -1490,7 +1490,22 @@ def main() -> None:
     if not (1 <= port <= 65535):
         raise RuntimeError("CDT_SKETCHUP_MCP_PORT must be 1..65535")
 
-    uvicorn.run(create_app(), host=host, port=port, log_level="info")
+    from .runtime_config import configured_runtime
+    runtime = configured_runtime()
+    if runtime is not None:
+        set_runtime(runtime)
+    transport = os.environ.get("CDT_SKETCHUP_MCP_TRANSPORT", "streamable-http").strip()
+    try:
+        if transport == "stdio":
+            mcp.run(transport="stdio")
+        elif transport == "streamable-http":
+            uvicorn.run(create_app(), host=host, port=port, log_level="info")
+        else:
+            raise ValueError("CDT_SKETCHUP_MCP_TRANSPORT must be stdio or streamable-http")
+    finally:
+        if runtime is not None:
+            import asyncio
+            asyncio.run(runtime.close())
 
 
 if __name__ == "__main__":

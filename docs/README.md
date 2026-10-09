@@ -9,3 +9,5 @@ Public documentation contains only stable product and integration material. Inte
 - [Reproducible baseline](REPRODUCIBLE_BASELINE.md) — platform locks, installation, doctor and packaging.
 
 For product use, no document outside this public set is required.
+
+- [Runtime operation](RUNTIME_OPERATIONS.md): attach-only agent, SSH placement, durable binding and recovery.
