@@ -4,7 +4,7 @@ Domain-neutral SketchUp MCP execution provider. Typed Python tools dispatch to
 a Ruby extension on SketchUp's main thread; engineering design rules belong to
 CDT_Engineer.
 
-Provider `0.1.0` · Contract `0.31`. Measured native scopes target
+Provider `0.1.1` · Contract `0.31`. Measured native scopes target
 SketchUp 2024 `24.0.594` / Ruby `3.2.2`; see
 [compatibility](docs/COMPATIBILITY.md) for versioned acceptance limits.
 
@@ -42,6 +42,7 @@ independent editing is intended. A successful save or render is not engineering 
 - [Architecture](docs/ARCHITECTURE.md).
 - [Security](docs/SECURITY.md).
 - [Compatibility](docs/COMPATIBILITY.md).
+- [Stable release, installation and rollback](docs/RELEASE_AND_DEPLOYMENT.md).
 - [Documentation index](docs/README.md).
 
 No arbitrary Ruby/script execution surface is exposed. Current runtime discovery

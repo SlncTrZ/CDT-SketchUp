@@ -86,7 +86,7 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(help_tools, registered)
 
     def test_contract_versions_are_internally_consistent(self) -> None:
-        self.assertEqual(PROVIDER_VERSION, "0.1.0")
+        self.assertEqual(PROVIDER_VERSION, "0.1.1")
         help_payload = build_help()
         self.assertEqual(help_payload["provider_version"], PROVIDER_VERSION)
         self.assertEqual(help_payload["contract_version"], CONTRACT_VERSION)

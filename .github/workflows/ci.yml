@@ -32,14 +32,14 @@ jobs:
       - name: Test
         run: python -m pytest tests -q
       - name: Build reproducible RBZ
-        run: python scripts/build_rbz.py --output dist/cdt-sketchup-bridge-0.1.0.rbz
+        run: python scripts/build_rbz.py --output dist/cdt-sketchup-bridge-0.1.1.rbz
       - name: Installed dependency evidence
         run: python -m pip freeze --all > dist/dependencies.txt
       - name: Release provenance manifest
         run: >
           python scripts/release_manifest.py
           --output dist/release-manifest.json
-          --evidence dist/cdt-sketchup-bridge-0.1.0.rbz
+          --evidence dist/cdt-sketchup-bridge-0.1.1.rbz
           --evidence scripts/native_bench_b4.py
           --evidence scripts/public_recovery_a05.py
           --evidence ${{ matrix.lock }}

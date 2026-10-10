@@ -1,5 +1,7 @@
 # Runtime operation
 
+**Stable package:** `0.1.1`, separate MCP contract `0.31`. For source artifact, authentication checks and versioned rollback see [release & deployment](RELEASE_AND_DEPLOYMENT.md). An installed Ruby extension must be verified independently of the Git tag.
+
 The default `cdt-sketchup` connects to the local Ruby bridge. For split-host operation, keep both native listeners on loopback and forward the agent through verified SSH. The agent attaches to SketchUp; opening a model remains an operator action.
 
 ## Workstation
