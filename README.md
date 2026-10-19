@@ -10,7 +10,7 @@ SketchUp 2024 `24.0.594` / Ruby `3.2.2`; see
 
 ## Install and run
 
-Python 3.11+ is required. Use the platform lock and reproducible installation
+Python 3.10+ is required. Use the platform lock and reproducible installation
 procedure in [REPRODUCIBLE_BASELINE](docs/REPRODUCIBLE_BASELINE.md).
 
 ```bash
