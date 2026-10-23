@@ -1,12 +1,48 @@
 # CDT-SketchUp
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
+[![MCP Protocol](https://img.shields.io/badge/MCP-Standard-orange.svg)](https://modelcontextprotocol.io)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey.svg)](docs/COMPATIBILITY.md)
+[![Tools](https://img.shields.io/badge/tools-68%20callable-green.svg)](docs/TOOL_GUIDE.md)
+
 Domain-neutral SketchUp MCP execution provider. Typed Python tools dispatch to
 a Ruby extension on SketchUp's main thread; engineering design rules belong to
 CDT_Engineer.
 
-Provider `0.1.1` · Contract `0.31`. Measured native scopes target
+Provider `0.1.1` · Contract `0.31` · 68 public tools. Measured native scopes target
 SketchUp 2024 `24.0.594` / Ruby `3.2.2`; see
 [compatibility](docs/COMPATIBILITY.md) for versioned acceptance limits.
+
+---
+
+## Quickstart / MCP Client Configuration
+
+### Claude Desktop (`claude_desktop_config.json`)
+```json
+{
+  "mcpServers": {
+    "cdt-sketchup": {
+      "command": "uvx",
+      "args": ["cdt-sketchup"]
+    }
+  }
+}
+```
+
+### Cursor (`~/.cursor/mcp.json`)
+```json
+{
+  "mcpServers": {
+    "cdt-sketchup": {
+      "command": "uvx",
+      "args": ["cdt-sketchup"]
+    }
+  }
+}
+```
+
+---
 
 ## Install and run
 
@@ -47,3 +83,7 @@ independent editing is intended. A successful save or render is not engineering 
 
 No arbitrary Ruby/script execution surface is exposed. Current runtime discovery
 and ownership checks remain required before starting, draining or stopping work.
+
+## License
+
+Distributed under the open-source MIT License. See [LICENSE](LICENSE).

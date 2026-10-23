@@ -7,11 +7,28 @@ name = "cdt-sketchup"
 version = "0.1.1"
 description = "Generic CAD execution engine for SketchUp over MCP"
 readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Trương Công Định (SlncTrZ)" }]
+keywords = ["sketchup", "cad", "mcp", "automation", "ai-agents"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering",
+]
 requires-python = ">=3.10"
 dependencies = [
   "mcp==2.2.0",
   "uvicorn>=0.35,<1",
 ]
+
+[project.urls]
+Repository = "https://github.com/SlncTrZ/CDT-SketchUp"
+Issues = "https://github.com/SlncTrZ/CDT-SketchUp/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.4,<9", "pytest-subtests>=0.15,<1", "ruff>=0.16,<1"]

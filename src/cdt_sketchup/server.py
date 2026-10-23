@@ -8,7 +8,9 @@ import hmac
 import math
 import os
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import Field
 
 try:
     from mcp.server import MCPServer
@@ -103,15 +105,20 @@ def _error(kind: str, message: str, *, retryable: bool) -> dict[str, Any]:
 
 async def _call_bridge(
     command: str,
-    params: dict[str, Any] | None = None,
+    params: Annotated[
+        dict[str, Any] | None, Field(description="Action-specific parameter dictionary")
+    ] = None,
     *,
     mutation_id: str | None = None,
 ) -> dict[str, Any]:
     body = dict(params) if params else {}
     if mutation_id is not None and command != "execute_geometry":
         raise ValueError("mutation_id is only valid for execute_geometry")
-    if (command == "execute_geometry" and isinstance(body.get("action"), str)
-            and "mutation" not in body):
+    if (
+        command == "execute_geometry"
+        and isinstance(body.get("action"), str)
+        and "mutation" not in body
+    ):
         chosen_id = mutation_id if mutation_id is not None else new_mutation_id()
         body["mutation"] = mutation_envelope(chosen_id, body)
     try:
@@ -145,7 +152,9 @@ async def _call_bridge(
         )
     except RuntimeAuthError:
         return _error(
-            "runtime_authentication_error", "SketchUp runtime authentication failed.", retryable=False
+            "runtime_authentication_error",
+            "SketchUp runtime authentication failed.",
+            retryable=False,
         )
     except RuntimeOpRefusedError:
         return _error(
@@ -160,37 +169,100 @@ async def _call_bridge(
 def _matrix_multiply(left: list[float], right: list[float]) -> list[float]:
     if len(left) != 16 or len(right) != 16:
         raise ValueError("transform matrices must contain exactly 16 numbers")
-    return [sum(left[row + 4*k] * right[k + 4*col] for k in range(4)) for col in range(4) for row in range(4)]
+    return [
+        sum(left[row + 4 * k] * right[k + 4 * col] for k in range(4))
+        for col in range(4)
+        for row in range(4)
+    ]
 
-def _translation_matrix(vector: list[float]) -> list[float]:
+
+def _translation_matrix(
+    vector: Annotated[
+        list[float], Field(description="[X, Y, Z] translation offset vector in specified unit")
+    ],
+) -> list[float]:
     if len(vector) != 3:
         raise ValueError("vector must contain exactly 3 numbers")
-    x,y,z=(float(v) for v in vector)
-    if not all(math.isfinite(v) for v in (x,y,z)):
+    x, y, z = (float(v) for v in vector)
+    if not all(math.isfinite(v) for v in (x, y, z)):
         raise ValueError("vector must contain finite numbers")
-    return [1.,0.,0.,0., 0.,1.,0.,0., 0.,0.,1.,0., x,y,z,1.]
+    return [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, x, y, z, 1.0]
 
-def _rotation_matrix(origin: list[float], axis: list[float], degrees: float) -> list[float]:
-    if len(origin)!=3 or len(axis)!=3:
+
+def _rotation_matrix(
+    origin: Annotated[
+        list[float], Field(description="[X, Y, Z] origin base point in specified unit")
+    ],
+    axis: Annotated[
+        list[float], Field(description="[X, Y, Z] directional vector defining the rotation axis")
+    ],
+    degrees: Annotated[float, Field(description="Rotation angle in degrees")],
+) -> list[float]:
+    if len(origin) != 3 or len(axis) != 3:
         raise ValueError("axis_origin and axis must contain exactly 3 numbers")
-    ox,oy,oz=(float(v) for v in origin); ax,ay,az=(float(v) for v in axis); deg=float(degrees)
-    if not all(math.isfinite(v) for v in (ox,oy,oz,ax,ay,az,deg)):
+    ox, oy, oz = (float(v) for v in origin)
+    ax, ay, az = (float(v) for v in axis)
+    deg = float(degrees)
+    if not all(math.isfinite(v) for v in (ox, oy, oz, ax, ay, az, deg)):
         raise ValueError("rotation inputs must be finite")
-    length=math.sqrt(ax*ax+ay*ay+az*az)
-    if length==0.: raise ValueError("axis must be non-zero")
-    x,y,z=ax/length,ay/length,az/length; a=math.radians(deg); c=math.cos(a); q=math.sin(a); t=1.-c
-    r=[t*x*x+c,t*x*y+q*z,t*x*z-q*y,0., t*x*y-q*z,t*y*y+c,t*y*z+q*x,0., t*x*z+q*y,t*y*z-q*x,t*z*z+c,0., 0.,0.,0.,1.]
-    return _matrix_multiply(_translation_matrix([ox,oy,oz]),_matrix_multiply(r,_translation_matrix([-ox,-oy,-oz])))
+    length = math.sqrt(ax * ax + ay * ay + az * az)
+    if length == 0.0:
+        raise ValueError("axis must be non-zero")
+    x, y, z = ax / length, ay / length, az / length
+    a = math.radians(deg)
+    c = math.cos(a)
+    q = math.sin(a)
+    t = 1.0 - c
+    r = [
+        t * x * x + c,
+        t * x * y + q * z,
+        t * x * z - q * y,
+        0.0,
+        t * x * y - q * z,
+        t * y * y + c,
+        t * y * z + q * x,
+        0.0,
+        t * x * z + q * y,
+        t * y * z - q * x,
+        t * z * z + c,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ]
+    return _matrix_multiply(
+        _translation_matrix([ox, oy, oz]), _matrix_multiply(r, _translation_matrix([-ox, -oy, -oz]))
+    )
 
-def _scale_matrix(origin: list[float], factors: list[float]) -> list[float]:
-    if len(origin)!=3 or len(factors)!=3: raise ValueError("origin and factors must contain exactly 3 numbers")
-    ox,oy,oz=(float(v) for v in origin); sx,sy,sz=(float(v) for v in factors)
-    if not all(math.isfinite(v) for v in (ox,oy,oz,sx,sy,sz)): raise ValueError("scale inputs must be finite")
-    if 0. in (sx,sy,sz): raise ValueError("scale factors must be non-zero")
-    scale=[sx,0.,0.,0., 0.,sy,0.,0., 0.,0.,sz,0., 0.,0.,0.,1.]
-    return _matrix_multiply(_translation_matrix([ox,oy,oz]),_matrix_multiply(scale,_translation_matrix([-ox,-oy,-oz])))
 
-def _reflection_matrix(plane_point: list[float], plane_normal: list[float]) -> list[float]:
+def _scale_matrix(
+    origin: Annotated[
+        list[float], Field(description="[X, Y, Z] origin base point in specified unit")
+    ],
+    factors: Annotated[list[float], Field(description="[X, Y, Z] scale multipliers")],
+) -> list[float]:
+    if len(origin) != 3 or len(factors) != 3:
+        raise ValueError("origin and factors must contain exactly 3 numbers")
+    ox, oy, oz = (float(v) for v in origin)
+    sx, sy, sz = (float(v) for v in factors)
+    if not all(math.isfinite(v) for v in (ox, oy, oz, sx, sy, sz)):
+        raise ValueError("scale inputs must be finite")
+    if 0.0 in (sx, sy, sz):
+        raise ValueError("scale factors must be non-zero")
+    scale = [sx, 0.0, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, 0.0, sz, 0.0, 0.0, 0.0, 0.0, 1.0]
+    return _matrix_multiply(
+        _translation_matrix([ox, oy, oz]),
+        _matrix_multiply(scale, _translation_matrix([-ox, -oy, -oz])),
+    )
+
+
+def _reflection_matrix(
+    plane_point: Annotated[list[float], Field(description="[X, Y, Z] point on the mirror plane")],
+    plane_normal: Annotated[
+        list[float], Field(description="[X, Y, Z] normal vector of the mirror plane")
+    ],
+) -> list[float]:
     if len(plane_point) != 3 or len(plane_normal) != 3:
         raise ValueError("plane_point and plane_normal must contain exactly 3 numbers")
     px, py, pz = (float(v) for v in plane_point)
@@ -198,39 +270,151 @@ def _reflection_matrix(plane_point: list[float], plane_normal: list[float]) -> l
     if not all(math.isfinite(v) for v in (px, py, pz, nx, ny, nz)):
         raise ValueError("mirror plane inputs must be finite")
     length = math.sqrt(nx * nx + ny * ny + nz * nz)
-    if length == 0.:
+    if length == 0.0:
         raise ValueError("plane_normal must be non-zero")
     nx, ny, nz = nx / length, ny / length, nz / length
     linear = [
-        1. - 2. * nx * nx, -2. * nx * ny, -2. * nx * nz, 0.,
-        -2. * nx * ny, 1. - 2. * ny * ny, -2. * ny * nz, 0.,
-        -2. * nx * nz, -2. * ny * nz, 1. - 2. * nz * nz, 0.,
-        0., 0., 0., 1.,
+        1.0 - 2.0 * nx * nx,
+        -2.0 * nx * ny,
+        -2.0 * nx * nz,
+        0.0,
+        -2.0 * nx * ny,
+        1.0 - 2.0 * ny * ny,
+        -2.0 * ny * nz,
+        0.0,
+        -2.0 * nx * nz,
+        -2.0 * ny * nz,
+        1.0 - 2.0 * nz * nz,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
     ]
-    return _matrix_multiply(_translation_matrix([px, py, pz]), _matrix_multiply(linear, _translation_matrix([-px, -py, -pz])))
+    return _matrix_multiply(
+        _translation_matrix([px, py, pz]),
+        _matrix_multiply(linear, _translation_matrix([-px, -py, -pz])),
+    )
 
-async def _strict_object_guards(persistent_id:int, *, unit:str, coordinate_space:str, if_context:dict[str,str]|None, if_match:str|None, allowed:tuple[str,...]=("Group","ComponentInstance"), kind:str="Duplication")->dict[str,Any]:
-    unit=validate_public_unit(unit); coordinate_space=validate_coordinate_space(coordinate_space)
-    receipt=await _call_bridge("get_entity_state",{"persistent_id":persistent_id,"unit":unit,"coordinate_space":coordinate_space})
-    if receipt.get("ok") is False: return receipt
-    state=receipt.get("result",{}); obj_type=state.get("type")
-    if obj_type not in allowed: return _error("unsupported_object_type",f"{kind} does not support this entity type.",retryable=False)
-    current_context={key:receipt["context"][key] for key in ("id","revision")}
-    if if_context is not None and if_context != current_context: return _error("context_mismatch","Active model/edit context changed since the supplied receipt.",retryable=False)
-    if if_match is not None and if_match != receipt.get("entity_fingerprint"): return _error("stale_entity_state","Target entity state changed since the supplied receipt.",retryable=False)
-    return {"unit":unit,"coordinate_space":coordinate_space,"context":current_context,"match":receipt["entity_fingerprint"],"type":obj_type}
 
-async def _strict_relative_transform(persistent_id:int, delta:list[float] | Callable[[dict[str,Any]],list[float]], *, unit:str, coordinate_space:str, if_context:dict[str,str]|None, if_match:str|None)->dict[str,Any]:
-    unit=validate_public_unit(unit); coordinate_space=validate_coordinate_space(coordinate_space)
-    receipt=await _call_bridge("get_entity_state",{"persistent_id":persistent_id,"unit":unit,"coordinate_space":coordinate_space})
-    if receipt.get("ok") is False: return receipt
-    state=receipt.get("result",{}); current=state.get("transformation")
-    if not isinstance(current,list) or len(current)!=16: return _error("unsupported_object_type","Entity does not expose a transform.",retryable=False)
-    current_context={key:receipt["context"][key] for key in ("id","revision")}
-    if if_context is not None and if_context != current_context: return _error("context_mismatch","Active model/edit context changed since the supplied receipt.",retryable=False)
-    if if_match is not None and if_match != receipt.get("entity_fingerprint"): return _error("stale_entity_state","Target entity state changed since the supplied receipt.",retryable=False)
-    relative=delta(state) if callable(delta) else delta; target=_matrix_multiply(relative,[float(v) for v in current])
-    return await _call_bridge("execute_geometry",{"action":"transform_entity","params":{"persistent_id":persistent_id,"matrix":target},"expect":{"active_entity_delta":0,"transformation":target},"unit":unit,"coordinate_space":coordinate_space,"if_context":current_context,"if_match":receipt["entity_fingerprint"]})
+async def _strict_object_guards(
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    *,
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ],
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ],
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ],
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ],
+    allowed: tuple[str, ...] = ("Group", "ComponentInstance"),
+    kind: str = "Duplication",
+) -> dict[str, Any]:
+    unit = validate_public_unit(unit)
+    coordinate_space = validate_coordinate_space(coordinate_space)
+    receipt = await _call_bridge(
+        "get_entity_state",
+        {"persistent_id": persistent_id, "unit": unit, "coordinate_space": coordinate_space},
+    )
+    if receipt.get("ok") is False:
+        return receipt
+    state = receipt.get("result", {})
+    obj_type = state.get("type")
+    if obj_type not in allowed:
+        return _error(
+            "unsupported_object_type", f"{kind} does not support this entity type.", retryable=False
+        )
+    current_context = {key: receipt["context"][key] for key in ("id", "revision")}
+    if if_context is not None and if_context != current_context:
+        return _error(
+            "context_mismatch",
+            "Active model/edit context changed since the supplied receipt.",
+            retryable=False,
+        )
+    if if_match is not None and if_match != receipt.get("entity_fingerprint"):
+        return _error(
+            "stale_entity_state",
+            "Target entity state changed since the supplied receipt.",
+            retryable=False,
+        )
+    return {
+        "unit": unit,
+        "coordinate_space": coordinate_space,
+        "context": current_context,
+        "match": receipt["entity_fingerprint"],
+        "type": obj_type,
+    }
+
+
+async def _strict_relative_transform(
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    delta: list[float] | Callable[[dict[str, Any]], list[float]],
+    *,
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ],
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ],
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ],
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ],
+) -> dict[str, Any]:
+    unit = validate_public_unit(unit)
+    coordinate_space = validate_coordinate_space(coordinate_space)
+    receipt = await _call_bridge(
+        "get_entity_state",
+        {"persistent_id": persistent_id, "unit": unit, "coordinate_space": coordinate_space},
+    )
+    if receipt.get("ok") is False:
+        return receipt
+    state = receipt.get("result", {})
+    current = state.get("transformation")
+    if not isinstance(current, list) or len(current) != 16:
+        return _error(
+            "unsupported_object_type", "Entity does not expose a transform.", retryable=False
+        )
+    current_context = {key: receipt["context"][key] for key in ("id", "revision")}
+    if if_context is not None and if_context != current_context:
+        return _error(
+            "context_mismatch",
+            "Active model/edit context changed since the supplied receipt.",
+            retryable=False,
+        )
+    if if_match is not None and if_match != receipt.get("entity_fingerprint"):
+        return _error(
+            "stale_entity_state",
+            "Target entity state changed since the supplied receipt.",
+            retryable=False,
+        )
+    relative = delta(state) if callable(delta) else delta
+    target = _matrix_multiply(relative, [float(v) for v in current])
+    return await _call_bridge(
+        "execute_geometry",
+        {
+            "action": "transform_entity",
+            "params": {"persistent_id": persistent_id, "matrix": target},
+            "expect": {"active_entity_delta": 0, "transformation": target},
+            "unit": unit,
+            "coordinate_space": coordinate_space,
+            "if_context": current_context,
+            "if_match": receipt["entity_fingerprint"],
+        },
+    )
 
 
 @mcp.tool()
@@ -264,7 +448,15 @@ async def document_info() -> dict[str, Any]:
 
 
 @mcp.tool()
-async def object_list(limit: int = 100, type: str | None = None) -> dict[str, Any]:
+async def object_list(
+    limit: Annotated[int, Field(description="Maximum number of items to return")] = 100,
+    type: Annotated[
+        str | None,
+        Field(
+            description="Optional entity type filter (e.g. 'Face', 'Edge', 'ComponentInstance', 'Group')"
+        ),
+    ] = None,
+) -> dict[str, Any]:
     """List bounded entities from the active SketchUp edit context."""
     params: dict[str, Any] = {"limit": limit}
     if type is not None:
@@ -273,22 +465,43 @@ async def object_list(limit: int = 100, type: str | None = None) -> dict[str, An
 
 
 @mcp.tool()
-async def object_get(persistent_id: int) -> dict[str, Any]:
+async def object_get(
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+) -> dict[str, Any]:
     """Get one SketchUp entity by persistent ID."""
     return await _call_bridge("object_get", {"persistent_id": persistent_id})
 
 
 @mcp.tool()
 async def execute_geometry(
-    action: str,
-    params: dict[str, Any],
-    expect: dict[str, Any],
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | dict[str, str] | None = None,
-    target_context: dict[str, Any] | None = None,
-    operation_id: str | None = None,
+    action: Annotated[str, Field(description="Geometry action to execute")],
+    params: Annotated[dict[str, Any], Field(description="Action-specific parameter dictionary")],
+    expect: Annotated[
+        dict[str, Any],
+        Field(description="Expected postcondition assertions for optimistic verification"),
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | dict[str, str] | None,
+        Field(description="Predecessor entity fingerprint guard from prior receipt"),
+    ] = None,
+    target_context: Annotated[
+        dict[str, Any] | None, Field(description="Optional target edit context specification")
+    ] = None,
+    operation_id: Annotated[
+        str | None, Field(description="Client operation identifier for idempotency")
+    ] = None,
 ) -> dict[str, Any]:
     """Execute one closed action with optional caller-stable retry identity."""
     unit = validate_public_unit(unit)
@@ -317,9 +530,15 @@ async def execute_geometry(
 
 @mcp.tool()
 async def reconcile_operation(
-    operation_id: str,
-    before: dict[str, Any] | None = None,
-    expect_post: dict[str, Any] | None = None,
+    operation_id: Annotated[str, Field(description="Client operation identifier for idempotency")],
+    before: Annotated[
+        dict[str, Any] | None,
+        Field(description="Expected pre-mutation entity state for reconciliation"),
+    ] = None,
+    expect_post: Annotated[
+        dict[str, Any] | None,
+        Field(description="Expected post-mutation entity state for reconciliation"),
+    ] = None,
 ) -> dict[str, Any]:
     """Reconcile one caller-stable operation without retrying the mutation."""
     if not valid_mutation_id(operation_id):
@@ -334,9 +553,15 @@ async def reconcile_operation(
 
 @mcp.tool()
 async def get_entity_state(
-    persistent_id: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
 ) -> dict[str, Any]:
     """Return one semantic entity state in an explicit public length unit."""
     unit = validate_public_unit(unit)
@@ -349,12 +574,25 @@ async def get_entity_state(
 
 @mcp.tool()
 async def transform_entity(
-    persistent_id: int,
-    matrix: list[float],
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | None = None,
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    matrix: Annotated[
+        list[float], Field(description="16-element 4x4 transformation matrix in column-major order")
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
 ) -> dict[str, Any]:
     """Set an absolute transform with optional context and entity-state preconditions."""
     unit = validate_public_unit(unit)
@@ -374,33 +612,141 @@ async def transform_entity(
 
 
 @mcp.tool()
-async def move_entity(persistent_id:int, vector:list[float], unit:str=DEFAULT_PUBLIC_UNIT, coordinate_space:str=DEFAULT_COORDINATE_SPACE, if_context:dict[str,str]|None=None, if_match:str|None=None)->dict[str,Any]:
+async def move_entity(
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    vector: Annotated[
+        list[float], Field(description="[X, Y, Z] translation offset vector in specified unit")
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
+) -> dict[str, Any]:
     """Move relatively through the strict absolute-transform engine."""
-    return await _strict_relative_transform(persistent_id,_translation_matrix(vector),unit=unit,coordinate_space=coordinate_space,if_context=if_context,if_match=if_match)
+    return await _strict_relative_transform(
+        persistent_id,
+        _translation_matrix(vector),
+        unit=unit,
+        coordinate_space=coordinate_space,
+        if_context=if_context,
+        if_match=if_match,
+    )
+
 
 @mcp.tool()
-async def rotate_entity(persistent_id:int, axis_origin:list[float], axis:list[float], degrees:float, unit:str=DEFAULT_PUBLIC_UNIT, coordinate_space:str=DEFAULT_COORDINATE_SPACE, if_context:dict[str,str]|None=None, if_match:str|None=None)->dict[str,Any]:
+async def rotate_entity(
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    axis_origin: Annotated[
+        list[float], Field(description="[X, Y, Z] coordinate of rotation axis origin point")
+    ],
+    axis: Annotated[
+        list[float], Field(description="[X, Y, Z] directional vector defining the rotation axis")
+    ],
+    degrees: Annotated[float, Field(description="Rotation angle in degrees")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
+) -> dict[str, Any]:
     """Rotate relatively through the strict absolute-transform engine."""
-    return await _strict_relative_transform(persistent_id,_rotation_matrix(axis_origin,axis,degrees),unit=unit,coordinate_space=coordinate_space,if_context=if_context,if_match=if_match)
+    return await _strict_relative_transform(
+        persistent_id,
+        _rotation_matrix(axis_origin, axis, degrees),
+        unit=unit,
+        coordinate_space=coordinate_space,
+        if_context=if_context,
+        if_match=if_match,
+    )
+
 
 @mcp.tool()
-async def scale_entity(persistent_id:int, factors:list[float], origin:list[float]|None=None, unit:str=DEFAULT_PUBLIC_UNIT, coordinate_space:str=DEFAULT_COORDINATE_SPACE, if_context:dict[str,str]|None=None, if_match:str|None=None)->dict[str,Any]:
+async def scale_entity(
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    factors: Annotated[list[float], Field(description="[X, Y, Z] scale multipliers")],
+    origin: Annotated[
+        list[float] | None, Field(description="[X, Y, Z] origin base point in specified unit")
+    ] = None,
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
+) -> dict[str, Any]:
     """Scale relatively through the strict absolute-transform engine."""
-    def build_delta(state:dict[str,Any])->list[float]:
-        chosen=origin if origin is not None else state.get("bounds",{}).get("center")
-        if not isinstance(chosen,list): raise ValueError("scale origin is unavailable")
-        return _scale_matrix(chosen,factors)
-    return await _strict_relative_transform(persistent_id,build_delta,unit=unit,coordinate_space=coordinate_space,if_context=if_context,if_match=if_match)
+
+    def build_delta(state: dict[str, Any]) -> list[float]:
+        chosen = origin if origin is not None else state.get("bounds", {}).get("center")
+        if not isinstance(chosen, list):
+            raise ValueError("scale origin is unavailable")
+        return _scale_matrix(chosen, factors)
+
+    return await _strict_relative_transform(
+        persistent_id,
+        build_delta,
+        unit=unit,
+        coordinate_space=coordinate_space,
+        if_context=if_context,
+        if_match=if_match,
+    )
+
 
 @mcp.tool()
 async def boolean_operation(
-    tool_pid: int,
-    target_pid: int,
-    operation_type: str,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | None = None,
+    tool_pid: Annotated[int, Field(description="Persistent ID of the cutting tool solid entity")],
+    target_pid: Annotated[
+        int, Field(description="Persistent ID of the target solid entity to modify")
+    ],
+    operation_type: Annotated[
+        str,
+        Field(
+            description="Boolean operation: 'union', 'subtract', 'intersect', 'trim', or 'split'"
+        ),
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
 ) -> dict[str, Any]:
     """Apply a strict boolean; if_match guards the target_pid semantic state."""
     unit = validate_public_unit(unit)
@@ -425,11 +771,22 @@ async def boolean_operation(
 
 @mcp.tool()
 async def delete_entity(
-    persistent_id: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | None = None,
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
 ) -> dict[str, Any]:
     """Strictly delete one object with optional context and entity-state preconditions."""
     unit = validate_public_unit(unit)
@@ -450,12 +807,22 @@ async def delete_entity(
 
 @mcp.tool()
 async def group_entities(
-    persistent_ids: list[int],
-    name: str | None = None,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: dict[str, str] | None = None,
+    persistent_ids: Annotated[list[int], Field(description="List of persistent entity IDs (PIDs)")],
+    name: Annotated[str | None, Field(description="Entity or definition name")] = None,
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor entity fingerprint guard from prior receipt"),
+    ] = None,
 ) -> dict[str, Any]:
     """Strictly group an exact active-context PID set while preserving input identities."""
     unit = validate_public_unit(unit)
@@ -483,12 +850,22 @@ async def group_entities(
 
 @mcp.tool()
 async def create_component(
-    persistent_ids: list[int],
-    name: str | None = None,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: dict[str, str] | None = None,
+    persistent_ids: Annotated[list[int], Field(description="List of persistent entity IDs (PIDs)")],
+    name: Annotated[str | None, Field(description="Entity or definition name")] = None,
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor entity fingerprint guard from prior receipt"),
+    ] = None,
 ) -> dict[str, Any]:
     """Strictly compose an exact active-context PID set into a new component definition."""
     unit = validate_public_unit(unit)
@@ -516,12 +893,23 @@ async def create_component(
 
 @mcp.tool()
 async def place_instance(
-    definition_guid: str,
-    matrix: list[float],
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | None = None,
+    definition_guid: Annotated[str, Field(description="Unique GUID of the component definition")],
+    matrix: Annotated[
+        list[float], Field(description="16-element 4x4 transformation matrix in column-major order")
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
 ) -> dict[str, Any]:
     """Place a new instance of a component definition at an absolute transform."""
     unit = validate_public_unit(unit)
@@ -547,11 +935,22 @@ async def place_instance(
 
 @mcp.tool()
 async def make_unique(
-    persistent_id: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | None = None,
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
 ) -> dict[str, Any]:
     """Make one component instance unique with optional context and entity-state preconditions."""
     unit = validate_public_unit(unit)
@@ -572,101 +971,211 @@ async def make_unique(
 
 @mcp.tool()
 async def copy_entity(
-    persistent_id: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | None = None,
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
 ) -> dict[str, Any]:
     """Copy one group/component instance sharing its definition or geometry."""
-    guards = await _strict_object_guards(persistent_id, unit=unit, coordinate_space=coordinate_space, if_context=if_context, if_match=if_match)
+    guards = await _strict_object_guards(
+        persistent_id,
+        unit=unit,
+        coordinate_space=coordinate_space,
+        if_context=if_context,
+        if_match=if_match,
+    )
     if guards.get("ok") is False:
         return guards
-    return await _call_bridge("execute_geometry", {
-        "action": "copy_entity",
-        "params": {"persistent_id": persistent_id},
-        "expect": {"active_entity_delta": 1, "type": guards["type"]},
-        "unit": guards["unit"],
-        "coordinate_space": guards["coordinate_space"],
-        "if_context": guards["context"],
-        "if_match": guards["match"],
-    })
+    return await _call_bridge(
+        "execute_geometry",
+        {
+            "action": "copy_entity",
+            "params": {"persistent_id": persistent_id},
+            "expect": {"active_entity_delta": 1, "type": guards["type"]},
+            "unit": guards["unit"],
+            "coordinate_space": guards["coordinate_space"],
+            "if_context": guards["context"],
+            "if_match": guards["match"],
+        },
+    )
 
 
 @mcp.tool()
 async def linear_array(
-    persistent_id: int,
-    vector: list[float],
-    count: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | None = None,
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    vector: Annotated[
+        list[float], Field(description="[X, Y, Z] translation offset vector in specified unit")
+    ],
+    count: Annotated[int, Field(description="Number of array copies to generate")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
 ) -> dict[str, Any]:
     """Duplicate one object into a linear array of count copies in one transaction."""
     if len(vector) != 3:
         raise ValueError("vector must contain exactly 3 numbers")
-    guards = await _strict_object_guards(persistent_id, unit=unit, coordinate_space=coordinate_space, if_context=if_context, if_match=if_match)
+    guards = await _strict_object_guards(
+        persistent_id,
+        unit=unit,
+        coordinate_space=coordinate_space,
+        if_context=if_context,
+        if_match=if_match,
+    )
     if guards.get("ok") is False:
         return guards
-    return await _call_bridge("execute_geometry", {
-        "action": "linear_array",
-        "params": {"persistent_id": persistent_id, "vector": [float(v) for v in vector], "count": count},
-        "expect": {"active_entity_delta": count, "type": guards["type"], "count": count},
-        "unit": guards["unit"],
-        "coordinate_space": guards["coordinate_space"],
-        "if_context": guards["context"],
-        "if_match": guards["match"],
-    })
+    return await _call_bridge(
+        "execute_geometry",
+        {
+            "action": "linear_array",
+            "params": {
+                "persistent_id": persistent_id,
+                "vector": [float(v) for v in vector],
+                "count": count,
+            },
+            "expect": {"active_entity_delta": count, "type": guards["type"], "count": count},
+            "unit": guards["unit"],
+            "coordinate_space": guards["coordinate_space"],
+            "if_context": guards["context"],
+            "if_match": guards["match"],
+        },
+    )
 
 
 @mcp.tool()
 async def radial_array(
-    persistent_id: int,
-    axis_origin: list[float],
-    axis: list[float],
-    degrees: float,
-    count: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | None = None,
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    axis_origin: Annotated[
+        list[float], Field(description="[X, Y, Z] coordinate of rotation axis origin point")
+    ],
+    axis: Annotated[
+        list[float], Field(description="[X, Y, Z] directional vector defining the rotation axis")
+    ],
+    degrees: Annotated[float, Field(description="Rotation angle in degrees")],
+    count: Annotated[int, Field(description="Number of array copies to generate")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
 ) -> dict[str, Any]:
     """Duplicate one object into a radial array of count copies in one transaction."""
     if len(axis_origin) != 3 or len(axis) != 3:
         raise ValueError("axis_origin and axis must contain exactly 3 numbers")
-    guards = await _strict_object_guards(persistent_id, unit=unit, coordinate_space=coordinate_space, if_context=if_context, if_match=if_match)
+    guards = await _strict_object_guards(
+        persistent_id,
+        unit=unit,
+        coordinate_space=coordinate_space,
+        if_context=if_context,
+        if_match=if_match,
+    )
     if guards.get("ok") is False:
         return guards
-    return await _call_bridge("execute_geometry", {
-        "action": "radial_array",
-        "params": {
-            "persistent_id": persistent_id,
-            "axis_origin": [float(v) for v in axis_origin],
-            "axis": [float(v) for v in axis],
-            "degrees": float(degrees),
-            "count": count,
+    return await _call_bridge(
+        "execute_geometry",
+        {
+            "action": "radial_array",
+            "params": {
+                "persistent_id": persistent_id,
+                "axis_origin": [float(v) for v in axis_origin],
+                "axis": [float(v) for v in axis],
+                "degrees": float(degrees),
+                "count": count,
+            },
+            "expect": {"active_entity_delta": count, "type": guards["type"], "count": count},
+            "unit": guards["unit"],
+            "coordinate_space": guards["coordinate_space"],
+            "if_context": guards["context"],
+            "if_match": guards["match"],
         },
-        "expect": {"active_entity_delta": count, "type": guards["type"], "count": count},
-        "unit": guards["unit"],
-        "coordinate_space": guards["coordinate_space"],
-        "if_context": guards["context"],
-        "if_match": guards["match"],
-    })
+    )
 
 
 @mcp.tool()
-async def mirror_entity(persistent_id:int, plane_point:list[float], plane_normal:list[float], unit:str=DEFAULT_PUBLIC_UNIT, coordinate_space:str=DEFAULT_COORDINATE_SPACE, if_context:dict[str,str]|None=None, if_match:str|None=None)->dict[str,Any]:
+async def mirror_entity(
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    plane_point: Annotated[list[float], Field(description="[X, Y, Z] point on the mirror plane")],
+    plane_normal: Annotated[
+        list[float], Field(description="[X, Y, Z] normal vector of the mirror plane")
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
+) -> dict[str, Any]:
     """Mirror relatively through the strict absolute-transform engine."""
-    return await _strict_relative_transform(persistent_id,_reflection_matrix(plane_point,plane_normal),unit=unit,coordinate_space=coordinate_space,if_context=if_context,if_match=if_match)
+    return await _strict_relative_transform(
+        persistent_id,
+        _reflection_matrix(plane_point, plane_normal),
+        unit=unit,
+        coordinate_space=coordinate_space,
+        if_context=if_context,
+        if_match=if_match,
+    )
+
 
 @mcp.tool()
 async def create_polyline(
-    points: list[list[float]],
-    closed: bool = False,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
+    points: Annotated[
+        list[list[float]], Field(description="List of [X, Y, Z] coordinates in specified unit")
+    ],
+    closed: Annotated[
+        bool, Field(description="Whether to close polyline back to the starting vertex")
+    ] = False,
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
 ) -> dict[str, Any]:
     """Create a strict edge-chain polyline grouped as one object."""
     unit = validate_public_unit(unit)
@@ -693,13 +1202,22 @@ async def create_polyline(
 
 @mcp.tool()
 async def create_rectangle(
-    origin: list[float],
-    width: float,
-    height: float,
-    normal: list[float],
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
+    origin: Annotated[
+        list[float], Field(description="[X, Y, Z] origin base point in specified unit")
+    ],
+    width: Annotated[float, Field(description="Width dimension in specified unit")],
+    height: Annotated[float, Field(description="Height dimension in specified unit")],
+    normal: Annotated[list[float], Field(description="[X, Y, Z] plane normal vector")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
 ) -> dict[str, Any]:
     """Create a strict rectangle face from origin, dimensions and plane normal."""
     unit = validate_public_unit(unit)
@@ -723,13 +1241,22 @@ async def create_rectangle(
 
 @mcp.tool()
 async def create_circle(
-    center: list[float],
-    normal: list[float],
-    radius: float,
-    segments: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
+    center: Annotated[
+        list[float], Field(description="[X, Y, Z] center point coordinate in specified unit")
+    ],
+    normal: Annotated[list[float], Field(description="[X, Y, Z] plane normal vector")],
+    radius: Annotated[float, Field(description="Positive radius dimension in specified unit")],
+    segments: Annotated[int, Field(description="Number of polygon segments for circle or arc")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
 ) -> dict[str, Any]:
     """Create a strict circle edge loop grouped as one object."""
     unit = validate_public_unit(unit)
@@ -748,15 +1275,24 @@ async def create_circle(
 
 @mcp.tool()
 async def create_arc(
-    center: list[float],
-    normal: list[float],
-    radius: float,
-    start_degrees: float,
-    end_degrees: float,
-    segments: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
+    center: Annotated[
+        list[float], Field(description="[X, Y, Z] center point coordinate in specified unit")
+    ],
+    normal: Annotated[list[float], Field(description="[X, Y, Z] plane normal vector")],
+    radius: Annotated[float, Field(description="Positive radius dimension in specified unit")],
+    start_degrees: Annotated[float, Field(description="Start angle in degrees counter-clockwise")],
+    end_degrees: Annotated[float, Field(description="End angle in degrees counter-clockwise")],
+    segments: Annotated[int, Field(description="Number of polygon segments for circle or arc")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
 ) -> dict[str, Any]:
     """Create a strict arc edge chain grouped as one object."""
     unit = validate_public_unit(unit)
@@ -782,13 +1318,22 @@ async def create_arc(
 
 @mcp.tool()
 async def create_polygon(
-    center: list[float],
-    normal: list[float],
-    radius: float,
-    sides: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
+    center: Annotated[
+        list[float], Field(description="[X, Y, Z] center point coordinate in specified unit")
+    ],
+    normal: Annotated[list[float], Field(description="[X, Y, Z] plane normal vector")],
+    radius: Annotated[float, Field(description="Positive radius dimension in specified unit")],
+    sides: Annotated[int, Field(description="Number of polygon sides")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
 ) -> dict[str, Any]:
     """Create a strict regular-polygon face from center, normal, radius and side count."""
     unit = validate_public_unit(unit)
@@ -812,12 +1357,21 @@ async def create_polygon(
 
 @mcp.tool()
 async def create_mesh(
-    name: str,
-    points: list[list[float]],
-    faces: list[list[int]],
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
+    name: Annotated[str, Field(description="Entity or definition name")],
+    points: Annotated[
+        list[list[float]], Field(description="List of [X, Y, Z] coordinates in specified unit")
+    ],
+    faces: Annotated[list[list[int]], Field(description="List of face vertex index lists")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
 ) -> dict[str, Any]:
     """Create a bounded indexed polygon mesh grouped as one semantic object."""
     unit = validate_public_unit(unit)
@@ -841,12 +1395,24 @@ async def create_mesh(
 
 @mcp.tool()
 async def sweep_profile(
-    face_pid: int,
-    path_pids: list[int],
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: dict[str, str] | None = None,
+    face_pid: Annotated[int, Field(description="Persistent ID of the profile face to sweep")],
+    path_pids: Annotated[
+        list[int], Field(description="List of persistent IDs of edge path entities to sweep along")
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor entity fingerprint guard from prior receipt"),
+    ] = None,
 ) -> dict[str, Any]:
     """Sweep an isolated profile face along a connected edge path into a manifold group."""
     unit = validate_public_unit(unit)
@@ -884,9 +1450,11 @@ async def sweep_profile(
 
 @mcp.tool()
 async def measure_distance(
-    first_pid: int,
-    second_pid: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
+    first_pid: Annotated[int, Field(description="First entity persistent ID")],
+    second_pid: Annotated[int, Field(description="Second entity persistent ID")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
 ) -> dict[str, Any]:
     """Measure exact manifold-solid surface clearance plus legacy center/bounds facts."""
     unit = validate_public_unit(unit)
@@ -897,8 +1465,12 @@ async def measure_distance(
 
 @mcp.tool()
 async def query_topology(
-    persistent_id: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
 ) -> dict[str, Any]:
     """Return bounded connectivity and loop facts for one entity."""
     unit = validate_public_unit(unit)
@@ -907,9 +1479,11 @@ async def query_topology(
 
 @mcp.tool()
 async def query_overlap(
-    first_pid: int,
-    second_pid: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
+    first_pid: Annotated[int, Field(description="First entity persistent ID")],
+    second_pid: Annotated[int, Field(description="Second entity persistent ID")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
 ) -> dict[str, Any]:
     """Report exact manifold-solid disjoint/touching/penetrating relation plus bounds facts."""
     unit = validate_public_unit(unit)
@@ -920,7 +1494,9 @@ async def query_overlap(
 
 @mcp.tool()
 async def asset_list(
-    unit: str = DEFAULT_PUBLIC_UNIT,
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
 ) -> dict[str, Any]:
     """List owner-curated component assets available for strict placement."""
     unit = validate_public_unit(unit)
@@ -929,12 +1505,23 @@ async def asset_list(
 
 @mcp.tool()
 async def place_asset(
-    asset_key: str,
-    matrix: list[float],
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    target_context: dict[str, Any] | None = None,
+    asset_key: Annotated[str, Field(description="Unique library asset key identifier")],
+    matrix: Annotated[
+        list[float], Field(description="16-element 4x4 transformation matrix in column-major order")
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    target_context: Annotated[
+        dict[str, Any] | None, Field(description="Optional target edit context specification")
+    ] = None,
 ) -> dict[str, Any]:
     """Place one verified registry asset, optionally inside a bounded nested instance path."""
     unit = validate_public_unit(unit)
@@ -972,7 +1559,9 @@ async def place_asset(
 
 @mcp.tool()
 async def texture_list(
-    unit: str = DEFAULT_PUBLIC_UNIT,
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
 ) -> dict[str, Any]:
     """List owner-curated texture assets available for material use."""
     unit = validate_public_unit(unit)
@@ -981,20 +1570,32 @@ async def texture_list(
 
 @mcp.tool()
 async def material_apply_texture(
-    material: str,
-    texture_key: str,
-    width: float,
-    height: float,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
+    material: Annotated[str, Field(description="Material name identifier")],
+    texture_key: Annotated[str, Field(description="Unique texture asset key identifier")],
+    width: Annotated[float, Field(description="Width dimension in specified unit")],
+    height: Annotated[float, Field(description="Height dimension in specified unit")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
 ) -> dict[str, Any]:
     """Apply a registry texture to a material at an explicit real-world size."""
     unit = validate_public_unit(unit)
     coordinate_space = validate_coordinate_space(coordinate_space)
     payload: dict[str, Any] = {
         "action": "material_apply_texture",
-        "params": {"material": material, "texture_key": texture_key, "width": width, "height": height},
+        "params": {
+            "material": material,
+            "texture_key": texture_key,
+            "width": width,
+            "height": height,
+        },
         "expect": {"active_entity_delta": 0, "material": material},
         "unit": unit,
         "coordinate_space": coordinate_space,
@@ -1006,8 +1607,10 @@ async def material_apply_texture(
 
 @mcp.tool()
 async def material_info(
-    material: str,
-    unit: str = DEFAULT_PUBLIC_UNIT,
+    material: Annotated[str, Field(description="Material name identifier")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
 ) -> dict[str, Any]:
     """Return one material state with texture facts by name."""
     unit = validate_public_unit(unit)
@@ -1016,7 +1619,9 @@ async def material_info(
 
 @mcp.tool()
 async def camera_get(
-    unit: str = DEFAULT_PUBLIC_UNIT,
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
 ) -> dict[str, Any]:
     """Return the active view camera state in an explicit length unit."""
     unit = validate_public_unit(unit)
@@ -1025,14 +1630,25 @@ async def camera_get(
 
 @mcp.tool()
 async def camera_set(
-    eye: list[float],
-    target: list[float],
-    up: list[float] | None = None,
-    fov: float | None = None,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | None = None,
+    eye: Annotated[list[float], Field(description="[X, Y, Z] camera eye position coordinate")],
+    target: Annotated[list[float], Field(description="[X, Y, Z] camera look-at target coordinate")],
+    up: Annotated[
+        list[float] | None, Field(description="[X, Y, Z] camera up direction vector")
+    ] = None,
+    fov: Annotated[float | None, Field(description="Camera field of view in degrees")] = None,
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
 ) -> dict[str, Any]:
     """Set the active view camera with optional stale-view guards."""
     unit = validate_public_unit(unit)
@@ -1061,7 +1677,9 @@ async def camera_set(
 
 @mcp.tool()
 async def scene_list(
-    unit: str = DEFAULT_PUBLIC_UNIT,
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
 ) -> dict[str, Any]:
     """List model scenes by name."""
     unit = validate_public_unit(unit)
@@ -1070,10 +1688,17 @@ async def scene_list(
 
 @mcp.tool()
 async def scene_create(
-    name: str,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
+    name: Annotated[str, Field(description="Entity or definition name")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
 ) -> dict[str, Any]:
     """Create one model scene with an exact name."""
     unit = validate_public_unit(unit)
@@ -1097,13 +1722,23 @@ async def model_save() -> dict[str, Any]:
 
 
 @mcp.tool()
-async def model_save_as(file: str, overwrite: bool = False) -> dict[str, Any]:
+async def model_save_as(
+    file: Annotated[str, Field(description="Filesystem path to model or export destination")],
+    overwrite: Annotated[
+        bool, Field(description="Whether to overwrite existing destination file")
+    ] = False,
+) -> dict[str, Any]:
     """Save the active model under a rooted file name with explicit overwrite."""
     return await _call_bridge("model_save_as", {"file": file, "overwrite": overwrite})
 
 
 @mcp.tool()
-async def model_open(file: str, if_model_guid: str | None = None) -> dict[str, Any]:
+async def model_open(
+    file: Annotated[str, Field(description="Filesystem path to model or export destination")],
+    if_model_guid: Annotated[
+        str | None, Field(description="Expected model GUID guard to prevent opening wrong model")
+    ] = None,
+) -> dict[str, Any]:
     """Open a rooted model file, optionally guarded by the current model GUID."""
     params: dict[str, Any] = {"file": file}
     if if_model_guid is not None:
@@ -1113,11 +1748,15 @@ async def model_open(file: str, if_model_guid: str | None = None) -> dict[str, A
 
 @mcp.tool()
 async def model_export(
-    file: str,
-    format: str,
-    overwrite: bool = False,
-    width: int | None = None,
-    height: int | None = None,
+    file: Annotated[str, Field(description="Filesystem path to model or export destination")],
+    format: Annotated[
+        str, Field(description="Export format ('skp', 'dae', 'obj', 'stl', 'png', etc.)")
+    ],
+    overwrite: Annotated[
+        bool, Field(description="Whether to overwrite existing destination file")
+    ] = False,
+    width: Annotated[int | None, Field(description="Width dimension in specified unit")] = None,
+    height: Annotated[int | None, Field(description="Height dimension in specified unit")] = None,
 ) -> dict[str, Any]:
     """Export the active model to a rooted file in a supported format."""
     params: dict[str, Any] = {"file": file, "format": format, "overwrite": overwrite}
@@ -1135,20 +1774,27 @@ async def model_list() -> dict[str, Any]:
 
 
 @mcp.tool()
-async def artifact_seal(file: str) -> dict[str, Any]:
+async def artifact_seal(
+    file: Annotated[str, Field(description="Filesystem path to model or export destination")],
+) -> dict[str, Any]:
     """Seal one saved rooted SKP as a content-addressed accepted artifact."""
     return await _call_bridge("artifact_seal", {"file": file})
 
 
 @mcp.tool()
-async def artifact_verify(file: str, sha256: str) -> dict[str, Any]:
+async def artifact_verify(
+    file: Annotated[str, Field(description="Filesystem path to model or export destination")],
+    sha256: Annotated[str, Field(description="Expected SHA-256 hash for artifact verification")],
+) -> dict[str, Any]:
     """Verify a rooted SKP against an accepted content-addressed artifact seal."""
     return await _call_bridge("artifact_verify", {"file": file, "sha256": sha256})
 
 
 @mcp.tool()
 async def integrity_report(
-    unit: str = DEFAULT_PUBLIC_UNIT,
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
 ) -> dict[str, Any]:
     """Report generic CAD integrity facts without discipline conclusions."""
     unit = validate_public_unit(unit)
@@ -1157,62 +1803,100 @@ async def integrity_report(
 
 @mcp.tool()
 async def repair_reverse_face(
-    persistent_id: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | None = None,
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
 ) -> dict[str, Any]:
     """Strictly reverse one face with stale-state guards."""
     guards = await _strict_object_guards(
-        persistent_id, unit=unit, coordinate_space=coordinate_space,
-        if_context=if_context, if_match=if_match,
-        allowed=("Face",), kind="Face repair",
+        persistent_id,
+        unit=unit,
+        coordinate_space=coordinate_space,
+        if_context=if_context,
+        if_match=if_match,
+        allowed=("Face",),
+        kind="Face repair",
     )
     if guards.get("ok") is False:
         return guards
-    return await _call_bridge("execute_geometry", {
-        "action": "repair_reverse_face",
-        "params": {"persistent_id": persistent_id},
-        "expect": {"active_entity_delta": 0, "type": "Face"},
-        "unit": guards["unit"],
-        "coordinate_space": guards["coordinate_space"],
-        "if_context": guards["context"],
-        "if_match": guards["match"],
-    })
+    return await _call_bridge(
+        "execute_geometry",
+        {
+            "action": "repair_reverse_face",
+            "params": {"persistent_id": persistent_id},
+            "expect": {"active_entity_delta": 0, "type": "Face"},
+            "unit": guards["unit"],
+            "coordinate_space": guards["coordinate_space"],
+            "if_context": guards["context"],
+            "if_match": guards["match"],
+        },
+    )
 
 
 @mcp.tool()
 async def repair_erase_degenerate(
-    persistent_id: int,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | None = None,
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
 ) -> dict[str, Any]:
     """Strictly erase one degenerate edge with stale-state guards."""
     guards = await _strict_object_guards(
-        persistent_id, unit=unit, coordinate_space=coordinate_space,
-        if_context=if_context, if_match=if_match,
-        allowed=("Edge",), kind="Degenerate repair",
+        persistent_id,
+        unit=unit,
+        coordinate_space=coordinate_space,
+        if_context=if_context,
+        if_match=if_match,
+        allowed=("Edge",),
+        kind="Degenerate repair",
     )
     if guards.get("ok") is False:
         return guards
-    return await _call_bridge("execute_geometry", {
-        "action": "repair_erase_degenerate",
-        "params": {"persistent_id": persistent_id},
-        "expect": {"active_entity_delta": -1, "deleted": True},
-        "unit": guards["unit"],
-        "coordinate_space": guards["coordinate_space"],
-        "if_context": guards["context"],
-        "if_match": guards["match"],
-    })
+    return await _call_bridge(
+        "execute_geometry",
+        {
+            "action": "repair_erase_degenerate",
+            "params": {"persistent_id": persistent_id},
+            "expect": {"active_entity_delta": -1, "deleted": True},
+            "unit": guards["unit"],
+            "coordinate_space": guards["coordinate_space"],
+            "if_context": guards["context"],
+            "if_match": guards["match"],
+        },
+    )
 
 
 @mcp.tool()
 async def definition_info(
-    definition_guid: str,
-    unit: str = DEFAULT_PUBLIC_UNIT,
+    definition_guid: Annotated[str, Field(description="Unique GUID of the component definition")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
 ) -> dict[str, Any]:
     """Return one component definition state by GUID in an explicit public length unit."""
     unit = validate_public_unit(unit)
@@ -1220,19 +1904,33 @@ async def definition_info(
 
 
 @mcp.tool()
-async def create_edge(start: list[float], end: list[float]) -> dict[str, Any]:
+async def create_edge(
+    start: Annotated[
+        list[float], Field(description="[X, Y, Z] start point coordinates in internal inches")
+    ],
+    end: Annotated[
+        list[float], Field(description="[X, Y, Z] end point coordinates in internal inches")
+    ],
+) -> dict[str, Any]:
     """Create one edge in the active edit context using internal-inch coordinates."""
     return await _call_bridge("create_edge", {"start": start, "end": end})
 
 
 @mcp.tool()
-async def create_face(points: list[list[float]]) -> dict[str, Any]:
+async def create_face(
+    points: Annotated[
+        list[list[float]], Field(description="List of [X, Y, Z] coordinates in specified unit")
+    ],
+) -> dict[str, Any]:
     """Create one face in the active edit context from 3D points."""
     return await _call_bridge("create_face", {"points": points})
 
 
 @mcp.tool()
-async def create_group(persistent_ids: list[int], name: str | None = None) -> dict[str, Any]:
+async def create_group(
+    persistent_ids: Annotated[list[int], Field(description="List of persistent entity IDs (PIDs)")],
+    name: Annotated[str | None, Field(description="Entity or definition name")] = None,
+) -> dict[str, Any]:
     """Deprecated compatibility alias for strict group_entities using internal-inch units."""
     params: dict[str, Any] = {"persistent_ids": persistent_ids}
     if name is not None:
@@ -1254,7 +1952,12 @@ async def create_group(persistent_ids: list[int], name: str | None = None) -> di
 
 
 @mcp.tool()
-async def selection_by_ids(persistent_ids: list[int], replace: bool = True) -> dict[str, Any]:
+async def selection_by_ids(
+    persistent_ids: Annotated[list[int], Field(description="List of persistent entity IDs (PIDs)")],
+    replace: Annotated[
+        bool, Field(description="Whether to replace existing selection (True) or add to it (False)")
+    ] = True,
+) -> dict[str, Any]:
     """Select bounded active-context entities by persistent ID."""
     return await _call_bridge(
         "selection_by_ids",
@@ -1269,34 +1972,94 @@ async def selection_clear() -> dict[str, Any]:
 
 
 @mcp.tool()
-async def object_delete(persistent_id: int) -> dict[str, Any]:
+async def object_delete(
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+) -> dict[str, Any]:
     """Delete one entity from the active edit context."""
     return await _call_bridge("object_delete", {"persistent_id": persistent_id})
 
 
 @mcp.tool()
-async def object_move(persistent_id:int, vector:list[float])->dict[str,Any]:
+async def object_move(
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    vector: Annotated[
+        list[float], Field(description="[X, Y, Z] translation offset vector in specified unit")
+    ],
+) -> dict[str, Any]:
     """Deprecated alias for strict move_entity using internal inches."""
-    return await _strict_relative_transform(persistent_id,_translation_matrix(vector),unit="in",coordinate_space=DEFAULT_COORDINATE_SPACE,if_context=None,if_match=None)
+    return await _strict_relative_transform(
+        persistent_id,
+        _translation_matrix(vector),
+        unit="in",
+        coordinate_space=DEFAULT_COORDINATE_SPACE,
+        if_context=None,
+        if_match=None,
+    )
+
 
 @mcp.tool()
-async def object_rotate(persistent_id:int, axis_origin:list[float], axis:list[float], degrees:float)->dict[str,Any]:
+async def object_rotate(
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    axis_origin: Annotated[
+        list[float], Field(description="[X, Y, Z] coordinate of rotation axis origin point")
+    ],
+    axis: Annotated[
+        list[float], Field(description="[X, Y, Z] directional vector defining the rotation axis")
+    ],
+    degrees: Annotated[float, Field(description="Rotation angle in degrees")],
+) -> dict[str, Any]:
     """Deprecated alias for strict rotate_entity using internal inches."""
-    return await _strict_relative_transform(persistent_id,_rotation_matrix(axis_origin,axis,degrees),unit="in",coordinate_space=DEFAULT_COORDINATE_SPACE,if_context=None,if_match=None)
+    return await _strict_relative_transform(
+        persistent_id,
+        _rotation_matrix(axis_origin, axis, degrees),
+        unit="in",
+        coordinate_space=DEFAULT_COORDINATE_SPACE,
+        if_context=None,
+        if_match=None,
+    )
+
 
 @mcp.tool()
-async def object_scale(persistent_id:int, factors:list[float], origin:list[float]|None=None)->dict[str,Any]:
+async def object_scale(
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    factors: Annotated[list[float], Field(description="[X, Y, Z] scale multipliers")],
+    origin: Annotated[
+        list[float] | None, Field(description="[X, Y, Z] origin base point in specified unit")
+    ] = None,
+) -> dict[str, Any]:
     """Deprecated alias for strict scale_entity using internal inches."""
 
-    def build_delta(state:dict[str,Any])->list[float]:
-        chosen=origin if origin is not None else state.get("bounds",{}).get("center")
-        if not isinstance(chosen,list): raise ValueError("scale origin is unavailable")
-        return _scale_matrix(chosen,factors)
-    return await _strict_relative_transform(persistent_id,build_delta,unit="in",coordinate_space=DEFAULT_COORDINATE_SPACE,if_context=None,if_match=None)
+    def build_delta(state: dict[str, Any]) -> list[float]:
+        chosen = origin if origin is not None else state.get("bounds", {}).get("center")
+        if not isinstance(chosen, list):
+            raise ValueError("scale origin is unavailable")
+        return _scale_matrix(chosen, factors)
+
+    return await _strict_relative_transform(
+        persistent_id,
+        build_delta,
+        unit="in",
+        coordinate_space=DEFAULT_COORDINATE_SPACE,
+        if_context=None,
+        if_match=None,
+    )
 
 
 @mcp.tool()
-async def push_pull_face(persistent_id: int, distance: float) -> dict[str, Any]:
+async def push_pull_face(
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    distance: Annotated[float, Field(description="Push/pull extrusion distance in specified unit")],
+) -> dict[str, Any]:
     """Push/pull one active-context face by an internal-inch distance."""
     return await _call_bridge(
         "push_pull_face",
@@ -1306,9 +2069,13 @@ async def push_pull_face(persistent_id: int, distance: float) -> dict[str, Any]:
 
 @mcp.tool()
 async def component_create_box(
-    name: str,
-    dimensions: list[float],
-    origin: list[float] | None = None,
+    name: Annotated[str, Field(description="Entity or definition name")],
+    dimensions: Annotated[
+        list[float], Field(description="[X, Y, Z] box dimensions in specified unit")
+    ],
+    origin: Annotated[
+        list[float] | None, Field(description="[X, Y, Z] origin base point in specified unit")
+    ] = None,
 ) -> dict[str, Any]:
     """Create a box component definition and one instance in the active context."""
     return await _call_bridge(
@@ -1322,37 +2089,65 @@ async def component_create_box(
 
 
 @mcp.tool()
-async def tag_create(name: str) -> dict[str, Any]:
+async def tag_create(
+    name: Annotated[str, Field(description="Entity or definition name")],
+) -> dict[str, Any]:
     """Create or return one SketchUp tag by name."""
     return await _call_bridge("tag_create", {"name": name})
 
 
 @mcp.tool()
 async def tag_assign(
-    persistent_id: int,
-    tag: str,
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | None = None,
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    tag: Annotated[str, Field(description="Tag (layer) name to assign")],
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
 ) -> dict[str, Any]:
     """Strictly assign one object to an existing tag with stale-write guards."""
-    guards = await _strict_object_guards(persistent_id, unit=unit, coordinate_space=coordinate_space, if_context=if_context, if_match=if_match, kind="Tag assignment")
+    guards = await _strict_object_guards(
+        persistent_id,
+        unit=unit,
+        coordinate_space=coordinate_space,
+        if_context=if_context,
+        if_match=if_match,
+        kind="Tag assignment",
+    )
     if guards.get("ok") is False:
         return guards
-    return await _call_bridge("execute_geometry", {
-        "action": "tag_assign",
-        "params": {"persistent_id": persistent_id, "tag": tag},
-        "expect": {"active_entity_delta": 0, "type": guards["type"], "tag": tag},
-        "unit": guards["unit"],
-        "coordinate_space": guards["coordinate_space"],
-        "if_context": guards["context"],
-        "if_match": guards["match"],
-    })
+    return await _call_bridge(
+        "execute_geometry",
+        {
+            "action": "tag_assign",
+            "params": {"persistent_id": persistent_id, "tag": tag},
+            "expect": {"active_entity_delta": 0, "type": guards["type"], "tag": tag},
+            "unit": guards["unit"],
+            "coordinate_space": guards["coordinate_space"],
+            "if_context": guards["context"],
+            "if_match": guards["match"],
+        },
+    )
 
 
 @mcp.tool()
-async def material_create(name: str, color: list[int] | None = None) -> dict[str, Any]:
+async def material_create(
+    name: Annotated[str, Field(description="Entity or definition name")],
+    color: Annotated[
+        list[int] | None, Field(description="RGB color values [0-255, 0-255, 0-255]")
+    ] = None,
+) -> dict[str, Any]:
     """Create or update one SketchUp material with an optional RGB color."""
     params: dict[str, Any] = {"name": name}
     if color is not None:
@@ -1362,27 +2157,51 @@ async def material_create(name: str, color: list[int] | None = None) -> dict[str
 
 @mcp.tool()
 async def material_assign(
-    persistent_id: int,
-    material: str,
-    side: str = "both",
-    unit: str = DEFAULT_PUBLIC_UNIT,
-    coordinate_space: str = DEFAULT_COORDINATE_SPACE,
-    if_context: dict[str, str] | None = None,
-    if_match: str | None = None,
+    persistent_id: Annotated[
+        int, Field(description="Persistent ID (PID) of the entity in the active SketchUp model")
+    ],
+    material: Annotated[str, Field(description="Material name identifier")],
+    side: Annotated[
+        str, Field(description="Face side to assign material: 'front', 'back', or 'both'")
+    ] = "both",
+    unit: Annotated[
+        str, Field(description="Length measurement unit ('mm', 'cm', 'm', 'in', 'ft')")
+    ] = DEFAULT_PUBLIC_UNIT,
+    coordinate_space: Annotated[
+        str, Field(description="Coordinate reference frame ('world' or 'local')")
+    ] = DEFAULT_COORDINATE_SPACE,
+    if_context: Annotated[
+        dict[str, str] | None,
+        Field(description="Predecessor edit context guard from prior receipt"),
+    ] = None,
+    if_match: Annotated[
+        str | None, Field(description="Predecessor entity fingerprint guard from prior receipt")
+    ] = None,
 ) -> dict[str, Any]:
     """Strictly assign an existing material; faces support front/back/both side semantics."""
-    guards = await _strict_object_guards(persistent_id, unit=unit, coordinate_space=coordinate_space, if_context=if_context, if_match=if_match, allowed=("Group", "ComponentInstance", "Face"), kind="Material assignment")
+    guards = await _strict_object_guards(
+        persistent_id,
+        unit=unit,
+        coordinate_space=coordinate_space,
+        if_context=if_context,
+        if_match=if_match,
+        allowed=("Group", "ComponentInstance", "Face"),
+        kind="Material assignment",
+    )
     if guards.get("ok") is False:
         return guards
-    return await _call_bridge("execute_geometry", {
-        "action": "material_assign",
-        "params": {"persistent_id": persistent_id, "material": material, "side": side},
-        "expect": {"active_entity_delta": 0, "type": guards["type"], "material": material},
-        "unit": guards["unit"],
-        "coordinate_space": guards["coordinate_space"],
-        "if_context": guards["context"],
-        "if_match": guards["match"],
-    })
+    return await _call_bridge(
+        "execute_geometry",
+        {
+            "action": "material_assign",
+            "params": {"persistent_id": persistent_id, "material": material, "side": side},
+            "expect": {"active_entity_delta": 0, "type": guards["type"], "material": material},
+            "unit": guards["unit"],
+            "coordinate_space": guards["coordinate_space"],
+            "if_context": guards["context"],
+            "if_match": guards["match"],
+        },
+    )
 
 
 class BearerAuthMiddleware:
@@ -1439,7 +2258,9 @@ class BearerAuthMiddleware:
         return None
 
 
-def _csv_env(name: str) -> list[str]:
+def _csv_env(
+    name: Annotated[str, Field(description="Entity or definition name")],
+) -> list[str]:
     value = os.environ.get(name, "")
     return [item.strip() for item in value.split(",") if item.strip()]
 
@@ -1460,9 +2281,7 @@ def create_app() -> Any:
                 "CDT_SKETCHUP_MCP_TOKEN (>=32 chars) is required for non-loopback bind"
             )
         if not allowed_hosts:
-            raise RuntimeError(
-                "CDT_SKETCHUP_ALLOWED_HOSTS is required for non-loopback bind"
-            )
+            raise RuntimeError("CDT_SKETCHUP_ALLOWED_HOSTS is required for non-loopback bind")
         security = TransportSecuritySettings(
             allowed_hosts=allowed_hosts,
             allowed_origins=allowed_origins,
@@ -1491,6 +2310,7 @@ def main() -> None:
         raise RuntimeError("CDT_SKETCHUP_MCP_PORT must be 1..65535")
 
     from .runtime_config import configured_runtime
+
     runtime = configured_runtime()
     if runtime is not None:
         set_runtime(runtime)
@@ -1505,6 +2325,7 @@ def main() -> None:
     finally:
         if runtime is not None:
             import asyncio
+
             asyncio.run(runtime.close())
 
 
