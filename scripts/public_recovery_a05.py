@@ -97,7 +97,7 @@ class DropNativeResponseProxy:
     ) -> None:
         self.upstream_host = upstream_host
         self.upstream_port = upstream_port
-        self.server: asyncio.AbstractServer | None = None
+        self.server: asyncio.Server | None = None
         self.native_response: dict[str, Any] | None = None
         self.response_received = asyncio.Event()
 

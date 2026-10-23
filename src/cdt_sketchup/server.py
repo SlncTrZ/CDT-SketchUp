@@ -496,7 +496,7 @@ async def execute_geometry(
         str | dict[str, str] | None,
         Field(description="Predecessor entity fingerprint guard from prior receipt"),
     ] = None,
-    target_context: Annotated[
+    target_context: Annotated[  # target_context: dict[str, Any] | None = None
         dict[str, Any] | None, Field(description="Optional target edit context specification")
     ] = None,
     operation_id: Annotated[
