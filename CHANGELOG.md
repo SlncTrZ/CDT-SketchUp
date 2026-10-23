@@ -1,5 +1,11 @@
 # Changelog — CDT-SketchUp
 
+## [0.1.2] — 2026-10-23
+
+- Add OSI-approved MIT License and update repository package metadata.
+- Annotate all 68 tool parameters with detailed typed Field descriptions for Glama TDQS Grade A.
+- Add ready-to-install MCP client quickstart configurations (Claude Desktop & Cursor) in README.
+
 ## [0.1.1] — 2026-10-10
 
 - Documentation maintenance: current stable package 0.1.1 (tag `v.0.1.1`), user-facing installation/release guide and credential-safe rollback instructions.

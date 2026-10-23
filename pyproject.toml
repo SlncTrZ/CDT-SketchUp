@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cdt-sketchup"
-version = "0.1.1"
+version = "0.1.2"
 description = "Generic CAD execution engine for SketchUp over MCP"
 readme = "README.md"
 license = { text = "MIT" }

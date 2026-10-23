@@ -1,6 +1,6 @@
 # CDT-SketchUp — Release and deployment
 
-**CDT package:** `0.1.1` · tag `v.0.1.1` · **independent** public contract `0.31`. The accepted SketchUp native baseline is **SketchUp 2024 (24.0.594) / Ruby 3.2.2**, not every later release.
+**CDT package:** `0.1.2` · tag `v.0.1.2` · **independent** public contract `0.31`. The accepted SketchUp native baseline is **SketchUp 2024 (24.0.594) / Ruby 3.2.2**, not every later release.
 
 A GitHub [source release](https://github.com/SlncTrZ/CDT-SketchUp/releases) does not imply the Ruby RBZ is attached or installed on the target Windows host.
 

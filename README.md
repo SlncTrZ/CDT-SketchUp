@@ -10,7 +10,7 @@ Domain-neutral SketchUp MCP execution provider. Typed Python tools dispatch to
 a Ruby extension on SketchUp's main thread; engineering design rules belong to
 CDT_Engineer.
 
-Provider `0.1.1` · Contract `0.31` · 68 public tools. Measured native scopes target
+Provider `0.1.2` · Contract `0.31` · 68 public tools. Measured native scopes target
 SketchUp 2024 `24.0.594` / Ruby `3.2.2`; see
 [compatibility](docs/COMPATIBILITY.md) for versioned acceptance limits.
 
