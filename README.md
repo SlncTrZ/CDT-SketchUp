@@ -19,6 +19,7 @@ SketchUp 2024 `24.0.594` / Ruby `3.2.2`; see
 ## Quickstart / MCP Client Configuration
 
 ### Claude Desktop (`claude_desktop_config.json`)
+
 ```json
 {
   "mcpServers": {
@@ -31,6 +32,7 @@ SketchUp 2024 `24.0.594` / Ruby `3.2.2`; see
 ```
 
 ### Cursor (`~/.cursor/mcp.json`)
+
 ```json
 {
   "mcpServers": {
